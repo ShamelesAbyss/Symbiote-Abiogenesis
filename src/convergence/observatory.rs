@@ -155,20 +155,21 @@ impl ObservatoryApp {
             &wgpu::DeviceDescriptor {
                 label: Some("Symbiote Abiogenesis Bioluminescence Device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_defaults(),
+                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::Performance,
             },
             None,
         ))
         .expect("request_device failed");
 
+        let max_dim = device.limits().max_texture_dimension_2d;
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats[0];
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: size.width.max(1),
-            height: size.height.max(1),
+            width: size.width.clamp(1, max_dim),
+            height: size.height.clamp(1, max_dim),
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
@@ -791,8 +792,13 @@ impl ObservatoryApp {
             pixels_per_point: full_output.pixels_per_point,
         };
 
-        let Ok(frame) = gpu.surface.get_current_texture() else {
-            return;
+        let frame = match gpu.surface.get_current_texture() {
+            Ok(f) => f,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                gpu.surface.configure(&gpu.device, &gpu.config);
+                return;
+            }
+            Err(_) => return,
         };
         let view = frame
             .texture
@@ -1004,10 +1010,13 @@ impl ApplicationHandler for ObservatoryApp {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(new_size) => {
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.config.width = new_size.width.max(1);
-                    gpu.config.height = new_size.height.max(1);
-                    gpu.surface.configure(&gpu.device, &gpu.config);
+                if new_size.width > 0 && new_size.height > 0 {
+                    if let Some(gpu) = &mut self.gpu {
+                        let max_dim = gpu.device.limits().max_texture_dimension_2d;
+                        gpu.config.width = new_size.width.min(max_dim);
+                        gpu.config.height = new_size.height.min(max_dim);
+                        gpu.surface.configure(&gpu.device, &gpu.config);
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -1042,6 +1051,17 @@ impl ApplicationHandler for ObservatoryApp {
                     KeyCode::Escape | KeyCode::KeyQ => event_loop.exit(),
                     KeyCode::Space => self.paused = !self.paused,
                     KeyCode::KeyH => self.cinematic_mode = !self.cinematic_mode,
+                    KeyCode::F11 => {
+                        if let Some(win) = &self.window {
+                            if win.fullscreen().is_some() {
+                                win.set_fullscreen(None);
+                            } else {
+                                win.set_fullscreen(Some(winit::window::Fullscreen::Borderless(
+                                    None,
+                                )));
+                            }
+                        }
+                    }
                     KeyCode::ArrowLeft | KeyCode::KeyA => {
                         self.track_selected = false;
                         self.cam_x -= pan;

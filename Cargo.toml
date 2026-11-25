@@ -1,6 +1,6 @@
 [package]
 name = "symbiote-abiogenesis"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Symbiote: Abiogenesis — Evolution Unbound. Multichannel continuous cellular morphogenesis, adaptive neural ecology, and GPU bioluminescent research observatory."
 

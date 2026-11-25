@@ -2,6 +2,11 @@
 
 All notable changes to **Symbiote: Abiogenesis** are documented in this file.
 
+## [0.3.1] - 2026-11-24 — Fullscreen & High-DPI Fix
+### Fixed
+- **Fullscreen / Maximize Crash on >2048px Displays (e.g. 2560×1440)**: Replaced `wgpu::Limits::downlevel_defaults()` (which capped `max_texture_dimension_2d` at `2048px`) with `wgpu::Limits::default().using_resolution(adapter.limits())` in `observatory.rs` and `gpu_compute.rs`.
+- **Surface Reconfiguration**: Added explicit `SurfaceError::Lost | SurfaceError::Outdated` recovery, zero-size minimize guards, and `F11` borderless fullscreen toggle.
+
 ## [0.3.0] - 2026-11-24 — Project Bioluminescence
 ### Changed & Added
 - **Radical Visual & Morphological Overhaul** (`src/convergence/lenia_body.rs`, `observatory.rs`, `snapshot.rs`):
