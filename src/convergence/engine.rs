@@ -1,17 +1,19 @@
-//! Unified multiscale artificial-life engine (ConvergenceWorld).
+//! Unified multiscale artificial-life engine (ConvergenceWorld — Project GENOMORPH).
 //!
-//! Integrates all 6 interacting scales:
+//! Integrates:
 //! 1. Primitive particle chemistry (Symbiote's Particle + RuleMatrix)
-//! 2. Localized high-resolution 3-channel continuous cellular bodies (LeniaBody)
-//! 3. Individual biological organisms with heritable NeuralBrain controllers
-//! 4. Evolving species, lineages, and MAP-Elites discovery archive
-//! 5. Regional ecological communities via O(N) spatial hashing (predation, symbiosis)
-//! 6. Persistent planetary-scale environmental systems (EcoField + UniverseConfig)
+//! 2. Localized 40x40x3 continuous Lenia cellular bodies (LeniaBody)
+//! 3. Procedural heritable anatomy (GenomorphGenome -> AnatomyPhenotype) & Artificial Embryogenesis
+//! 4. Evolving NEAT-inspired neural controllers (NeuralGraph: 10 inputs -> evolvable hidden -> 4 outputs)
+//! 5. Digestive biology (stomach_plant/stomach_meat -> gradual assimilation by diet_carnivory)
+//! 6. Genuine anatomy-driven predation, armor defense, zero-sum symbiosis & MAP-Elites phylogeny
 
 use crate::app::{App, Environment};
 use crate::convergence::eco_field::{EcoField, ECO_HEIGHT, ECO_WIDTH};
-use crate::convergence::lenia_body::{LeniaBody, LocalEnvInput, MorphGenome, NeuralBrain};
-use crate::convergence::phylogeny::PhylogenyArchive;
+use crate::convergence::genomorph::{AnatomyPhenotype, GenomorphGenome, LifeStage};
+use crate::convergence::lenia_body::{LeniaBody, LocalEnvInput, MorphGenome};
+use crate::convergence::neural_graph::NeuralGraph;
+use crate::convergence::phylogeny::{DiscoveryEntry, PhylogenyArchive};
 use crate::convergence::universes::{UniverseConfig, UniversePreset};
 use crate::particle::{Genome, Tribe};
 use crate::species::{derive_archetype, Archetype};
@@ -22,7 +24,7 @@ use std::collections::HashMap;
 use std::f32::consts::TAU;
 
 pub const MAX_ORGANISMS_BUFFER: usize = 320;
-const HASH_CELL_SIZE: f32 = 0.16;
+const HASH_CELL_SIZE: f32 = 0.22;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MorphOrganism {
@@ -34,13 +36,21 @@ pub struct MorphOrganism {
     pub archetype: Archetype,
     pub eco_genome: Genome,
     pub morph_genome: MorphGenome,
-    pub brain: NeuralBrain,
+    pub genomorph: GenomorphGenome,
+    #[serde(default)]
+    pub phenotype: AnatomyPhenotype,
+    pub brain: NeuralGraph,
     pub body: LeniaBody,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
     pub energy: f32,
+    pub stomach_plant: f32,
+    pub stomach_meat: f32,
+    /// Developmental maturity (0.28 = Embryo -> 0.55 = Juvenile -> 1.0 = Adult).
+    pub maturity: f32,
+    pub life_stage: LifeStage,
     pub age: u64,
     pub offspring_count: u32,
     pub alive: bool,
@@ -53,6 +63,9 @@ pub struct ConvergenceStats {
     pub active_lineages: usize,
     pub archive_discoveries: usize,
     pub extinction_events: u64,
+    pub mean_genes: f32,
+    pub mean_synapses: f32,
+    pub mean_carnivory: f32,
     pub mean_mass: f32,
     pub mean_membrane: f32,
     pub mean_organelle: f32,
@@ -112,16 +125,28 @@ impl ConvergenceWorld {
             morph_genome.spiral_twist =
                 (morph_genome.spiral_twist + rng.gen_range(-1.0..1.0) * universe.anomaly_twist_boost)
                     .clamp(-2.8, 2.8);
-            let brain = NeuralBrain::random(&mut rng);
+
+            let genomorph = if universe.minimal_founders {
+                GenomorphGenome::minimal_founder(&mut rng)
+            } else {
+                GenomorphGenome::from_tribe(tribe, &mut rng)
+            };
+            let brain = if universe.minimal_founders {
+                NeuralGraph::minimal(&mut rng)
+            } else {
+                NeuralGraph::random(&mut rng)
+            };
             let heading = rng.gen_range(0.0..TAU);
             let body = LeniaBody::new(&morph_genome, heading, &mut rng);
+            let maturity = rng.gen_range(0.65..0.95);
+            let phenotype = AnatomyPhenotype::express(&genomorph, maturity, body.pulse_phase);
             let archetype = derive_archetype(eco_genome, crate::particle::RareTrait::None, 8);
 
-            let x = rng.gen_range(-0.85..0.85);
-            let y = rng.gen_range(-0.85..0.85);
+            let x = rng.gen_range(-0.88..0.88);
+            let y = rng.gen_range(-0.88..0.88);
             let id = next_org_id;
             next_org_id += 1;
-            phylogeny.record_birth(id, tribe, 0, 0);
+            phylogeny.record_birth(id, None, id, tribe, 0, 0, &genomorph, &brain);
 
             organisms.push(MorphOrganism {
                 id,
@@ -132,13 +157,19 @@ impl ConvergenceWorld {
                 archetype,
                 eco_genome,
                 morph_genome,
+                genomorph,
+                phenotype,
                 brain,
                 body,
                 x,
                 y,
                 vx: 0.0,
                 vy: 0.0,
-                energy: 58.0 + rng.gen_range(0.0..20.0),
+                energy: 62.0 + rng.gen_range(0.0..18.0),
+                stomach_plant: 10.0,
+                stomach_meat: 0.0,
+                maturity,
+                life_stage: stage_from_maturity(maturity, 0, 3200),
                 age: 0,
                 offspring_count: 0,
                 alive: true,
@@ -184,24 +215,76 @@ impl ConvergenceWorld {
         }
     }
 
+    /// Re-introduce an archived MAP-Elites organism into the live ecosystem
+    /// (explicitly marked as user intervention).
+    pub fn spawn_from_discovery(&mut self, entry: &DiscoveryEntry) -> Option<u64> {
+        let cap = self.universe.max_organisms.min(MAX_ORGANISMS_BUFFER);
+        if self.organisms.len() >= cap {
+            return None;
+        }
+        let id = self.next_org_id;
+        self.next_org_id += 1;
+        let heading = self.rng.gen_range(0.0..TAU);
+        let body = LeniaBody::new(&entry.morph_genome, heading, &mut self.rng);
+        let mut genomorph = entry.genomorph.clone();
+        genomorph.last_mutation = format!("[USER INTERVENTION] Resurrected {}", entry.label);
+        let phenotype = AnatomyPhenotype::express(&genomorph, 0.85, body.pulse_phase);
+        let eco_genome = random_eco_genome(&mut self.rng);
+
+        self.phylogeny.record_birth(
+            id,
+            Some(entry.organism_id),
+            entry.lineage_id,
+            entry.tribe,
+            entry.generation,
+            self.tick,
+            &genomorph,
+            &entry.brain,
+        );
+        self.organisms.push(MorphOrganism {
+            id,
+            parent_id: Some(entry.organism_id),
+            lineage_id: entry.lineage_id,
+            generation: entry.generation,
+            tribe: entry.tribe,
+            archetype: derive_archetype(eco_genome, crate::particle::RareTrait::None, 8),
+            eco_genome,
+            morph_genome: entry.morph_genome,
+            genomorph,
+            phenotype,
+            brain: entry.brain.clone(),
+            body,
+            x: self.rng.gen_range(-0.6..0.6),
+            y: self.rng.gen_range(-0.6..0.6),
+            vx: 0.0,
+            vy: 0.0,
+            energy: 68.0,
+            stomach_plant: 12.0,
+            stomach_meat: 0.0,
+            maturity: 0.85,
+            life_stage: LifeStage::Adult,
+            age: 0,
+            offspring_count: 0,
+            alive: true,
+        });
+        Some(id)
+    }
+
     pub fn step(&mut self) {
         self.tick += 1;
 
-        // Periodic catastrophe for Extinction Protocol universe
         if self.universe.catastrophe_interval > 0
             && self.tick % self.universe.catastrophe_interval == 0
         {
             self.trigger_catastrophe();
         }
 
-        // Scale 1 & 6: Step Symbiote's underlying particle chemistry & ecology every 2 ticks
         if self.tick % 2 == 0 {
             self.symbiote.step();
             self.eco_field
                 .couple_symbiote_ecology(&self.symbiote.ecology, &self.symbiote.substrate);
         }
 
-        // Scale 6: Step continuous reaction-diffusion EcoField (GPU or Rayon CPU)
         let env = self.symbiote.environment;
         let mut stepped_field_gpu = false;
         #[cfg(feature = "gpu")]
@@ -216,74 +299,124 @@ impl ConvergenceWorld {
             self.eco_field.step_cpu(env);
         }
 
-        // Scale 2: Gather local environmental inputs for each organism
-        let env_inputs: Vec<LocalEnvInput> = self
-            .organisms
-            .iter()
-            .map(|org| {
-                let s = self.eco_field.sample_world(org.x, org.y);
-                LocalEnvInput {
-                    nutrient: s.nutrient * self.universe.nutrient_regen_mult.clamp(0.4, 1.8),
-                    pheromone: s.pheromone,
-                    toxin: s.toxin,
-                    nutrient_grad_x: s.nutrient_grad_x,
-                    nutrient_grad_y: s.nutrient_grad_y,
-                    mutagen: if env == Environment::Storm { 0.35 } else { 0.05 },
-                }
-            })
-            .collect();
-
-        // Step all 3-channel Lenia bodies + NeuralBrain controllers in parallel (Rayon)
-        self.organisms
-            .par_iter_mut()
-            .zip(env_inputs.par_iter())
-            .for_each(|(org, &local_env)| {
-                if !org.alive {
-                    return;
-                }
-                org.body.step_cpu(&org.morph_genome, local_env);
-                let brain_in = [
-                    local_env.nutrient,
-                    local_env.nutrient_grad_x * 6.0,
-                    local_env.nutrient_grad_y * 6.0,
-                    local_env.toxin,
-                    local_env.pheromone,
-                    (org.energy / 100.0).clamp(0.0, 1.5),
-                ];
-                org.brain.step(brain_in);
-            });
-
-        // Build O(N) Spatial Hash Grid for physical contact, predation & symbiosis
         let count = self.organisms.len();
+
+        // Build O(N) Toroidal Spatial Hash Grid
         let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::with_capacity(count);
         for (i, org) in self.organisms.iter().enumerate() {
-            let cell = hash_cell(org.x, org.y);
-            grid.entry(cell).or_default().push(i);
+            grid.entry(hash_cell(org.x, org.y)).or_default().push(i);
         }
 
-        let snap: Vec<(f32, f32, Tribe, f32, f32, f32)> = self
+        // Gather grounded local sensory inputs (limited by each organism's actual `sensor_range`!)
+        let snap: Vec<(f32, f32, f32, f32, f32, f32, f32, f32)> = self
             .organisms
             .iter()
             .map(|o| {
                 (
                     o.x,
                     o.y,
-                    o.tribe,
+                    o.body.heading,
                     o.body.metrics.mass,
-                    o.body.metrics.membrane_mass,
+                    o.phenotype.armor_rating,
+                    o.phenotype.sensor_range,
                     o.energy,
+                    o.maturity * o.genomorph.base_scale,
                 )
             })
             .collect();
 
-        // Coherent resource accounting accumulators:
-        // damage_to[j] = physical cellular damage fraction inflicted on organism j
-        // energy_delta[i] = real transferred energy (predation or zero-sum symbiosis)
+        let env_and_sense: Vec<(LocalEnvInput, [f32; 10])> = self
+            .organisms
+            .iter()
+            .enumerate()
+            .map(|(i, org)| {
+                let s = self.eco_field.sample_world(org.x, org.y);
+                let local_env = LocalEnvInput {
+                    nutrient: s.nutrient * self.universe.nutrient_regen_mult.clamp(0.4, 1.8),
+                    pheromone: s.pheromone,
+                    toxin: s.toxin,
+                    nutrient_grad_x: s.nutrient_grad_x,
+                    nutrient_grad_y: s.nutrient_grad_y,
+                    mutagen: if env == Environment::Storm { 0.35 } else { 0.05 },
+                };
+
+                // Sense nearest neighbor within organism's evolved SensoryAntenna range
+                let (my_x, my_y, my_h, _, _, sensor_r, _, my_scale) = snap[i];
+                let (cx, cy) = hash_cell(my_x, my_y);
+                let mut best_d = sensor_r;
+                let mut best_rel_angle = 0.0f32;
+                let mut best_rel_size = 0.0f32;
+                let mut found = false;
+
+                for oy in -2..=2 {
+                    for ox in -2..=2 {
+                        let Some(bucket) = grid.get(&(cx + ox, cy + oy)) else {
+                            continue;
+                        };
+                        for &j in bucket {
+                            if i == j {
+                                continue;
+                            }
+                            let dx = toroidal_delta(snap[j].0 - my_x);
+                            let dy = toroidal_delta(snap[j].1 - my_y);
+                            let d = (dx * dx + dy * dy).sqrt();
+                            if d > 1e-4 && d < best_d {
+                                best_d = d;
+                                let ang = dy.atan2(dx) - my_h;
+                                best_rel_angle = ang.sin();
+                                best_rel_size = ((snap[j].7 / my_scale.max(0.2)) - 1.0).clamp(-1.0, 2.0);
+                                found = true;
+                            }
+                        }
+                    }
+                }
+
+                let closeness = if found {
+                    (1.0 - best_d / sensor_r.max(0.05)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let stomach_fill = ((org.stomach_plant + org.stomach_meat)
+                    / org.phenotype.stomach_capacity.max(1.0))
+                .clamp(0.0, 1.0);
+
+                let brain_in = [
+                    local_env.nutrient,
+                    local_env.nutrient_grad_x * 6.0,
+                    local_env.nutrient_grad_y * 6.0,
+                    local_env.toxin,
+                    local_env.pheromone,
+                    best_rel_angle,
+                    closeness,
+                    best_rel_size,
+                    (org.energy / 100.0).clamp(0.0, 1.5),
+                    stomach_fill,
+                ];
+                (local_env, brain_in)
+            })
+            .collect();
+
+        // Step 40x40x3 Lenia bodies, express dynamic AnatomyPhenotype, and evaluate NeuralGraph in parallel
+        self.organisms
+            .par_iter_mut()
+            .zip(env_and_sense.par_iter())
+            .for_each(|(org, &(local_env, brain_in))| {
+                if !org.alive {
+                    return;
+                }
+                org.body.step_cpu(&org.morph_genome, local_env);
+                org.brain.step(brain_in);
+                org.phenotype =
+                    AnatomyPhenotype::express(&org.genomorph, org.maturity, org.body.pulse_phase);
+            });
+
+        // Coherent resource accounting accumulators
         let mut damage_to = vec![0.0f32; count];
+        let mut meat_gained = vec![0.0f32; count];
         let mut energy_delta = vec![0.0f32; count];
         let mut deposits: Vec<(f32, f32, f32, f32, f32, f32)> = Vec::with_capacity(count * 2);
         let mut new_offspring: Vec<MorphOrganism> = Vec::new();
-        let mut deaths_lineage: Vec<u64> = Vec::new();
+        let mut deaths_rec: Vec<(u64, u64)> = Vec::new();
         let max_orgs = self.universe.max_organisms.min(MAX_ORGANISMS_BUFFER);
 
         for i in 0..count {
@@ -292,22 +425,39 @@ impl ConvergenceWorld {
             }
             self.organisms[i].age += 1;
 
+            // Artificial Embryogenesis: progressive growth from Embryo -> Juvenile -> Adult -> Elder
+            // Childhood scarcity genuinely constrains developmental growth!
+            if self.organisms[i].maturity < 1.0 && self.organisms[i].energy > 28.0 {
+                let growth = 0.0028 * (self.organisms[i].energy / 65.0).clamp(0.25, 1.4);
+                self.organisms[i].maturity = (self.organisms[i].maturity + growth).min(1.0);
+                self.organisms[i].energy -= growth * 18.0;
+            }
+            self.organisms[i].life_stage = stage_from_maturity(
+                self.organisms[i].maturity,
+                self.organisms[i].age,
+                self.organisms[i].genomorph.max_age,
+            );
+
             let m = self.organisms[i].body.metrics;
-            let local = env_inputs[i];
-            let brain_out = self.organisms[i].brain.last_out;
+            let local = env_and_sense[i].0;
+            let out = self.organisms[i].brain.last_out;
+            let pheno = self.organisms[i].phenotype.clone();
 
-            // Emergent locomotion: continuous body COM drift + neural thrust + organelle motility
-            let motility = 0.6 + m.organelle_mass * 3.5;
-            let swim_scale =
-                0.0085 * (0.4 + self.organisms[i].morph_genome.asymmetry * 2.0) * motility;
-            let neural_fx = brain_out[0] * 0.0042 * motility;
-            let neural_fy = brain_out[1] * 0.0042 * motility;
+            // Anatomy-driven steering & propulsion:
+            // turn_torque rotates heading scaled by turn_authority; thrust acts along heading scaled by propulsion_power!
+            let turn = out[1] * 0.14 * pheno.turn_authority;
+            self.organisms[i].body.heading = (self.organisms[i].body.heading + turn).rem_euclid(TAU);
+            let h = self.organisms[i].body.heading;
 
-            let mut fx = m.com_dx * swim_scale + neural_fx;
-            let mut fy = m.com_dy * swim_scale + neural_fy;
+            let thrust_mag = ((out[0] + 0.35).max(0.0) * 0.0052 * pheno.propulsion_power)
+                * (0.65 + m.organelle_mass * 2.0);
+            let mut fx = h.cos() * thrust_mag + m.com_dx * 0.0045;
+            let mut fy = h.sin() * thrust_mag + m.com_dy * 0.0045;
 
-            let (my_x, my_y, my_tribe, my_mass, _, my_energy) = snap[i];
-            let my_radius = 0.030 + m.radius_norm * 0.042;
+            let my_x = snap[i].0;
+            let my_y = snap[i].1;
+            let my_radius = 0.032 + m.radius_norm * 0.042 * self.organisms[i].maturity;
+            let want_bite = out[2] > 0.18 || self.organisms[i].genomorph.diet_carnivory > 0.62;
             let (cx, cy) = hash_cell(my_x, my_y);
 
             for oy in -1..=1 {
@@ -319,100 +469,110 @@ impl ConvergenceWorld {
                         if i == j {
                             continue;
                         }
-                        let (ox_pos, oy_pos, o_tribe, o_mass, o_mem, o_energy) = snap[j];
-                        let dx = toroidal_delta(ox_pos - my_x);
-                        let dy = toroidal_delta(oy_pos - my_y);
+                        let dx = toroidal_delta(snap[j].0 - my_x);
+                        let dy = toroidal_delta(snap[j].1 - my_y);
                         let d2 = dx * dx + dy * dy;
-                        if d2 < 1e-6 || d2 > 0.0625 {
+                        if d2 < 1e-6 || d2 > 0.045 {
                             continue;
                         }
                         let d = d2.sqrt();
-                        let affinity = self.symbiote.rules[my_tribe.index()][o_tribe.index()];
-                        let contact_r = my_radius + 0.030 + o_mass * 0.04;
+                        let contact_r = my_radius + 0.032 + snap[j].3 * 0.04;
 
                         if d < contact_r {
                             let push = (contact_r - d) * 0.14;
                             fx -= (dx / d) * push;
                             fy -= (dy / d) * push;
 
-                            // Genuine Predation: inflicts real cellular damage on prey j,
-                            // transferring energy proportional to actual damaged biomass.
-                            if affinity < -0.30 && my_mass > o_mass * 1.12 {
-                                let bite_frac =
-                                    (0.14 * (1.0 - o_mem * 0.55)).clamp(0.03, 0.18);
+                            // Genuine Anatomy-Driven Predation:
+                            // Requires directional jaw alignment, bite_power, and bite_range!
+                            let forward_dot = (dx / d) * h.cos() + (dy / d) * h.sin();
+                            if want_bite && d <= pheno.bite_range + contact_r * 0.6 && forward_dot > 0.25 && pheno.bite_power > 0.12 {
+                                let defender_armor = snap[j].4;
+                                let bite_frac = (pheno.bite_power * 0.32 * (1.0 - defender_armor))
+                                    .clamp(0.02, 0.26);
                                 damage_to[j] = (damage_to[j] + bite_frac).min(0.65);
-                                let stolen = (o_mass * bite_frac * 95.0).min(o_energy * 0.35);
-                                energy_delta[i] += stolen;
-                                energy_delta[j] -= stolen;
+                                let flesh = (snap[j].3 * bite_frac * 95.0).min(snap[j].6 * 0.35);
+                                meat_gained[i] += flesh;
+                                energy_delta[j] -= flesh * 0.85;
+                                energy_delta[i] -= 0.45; // real attack energy expenditure
                                 self.total_predations += 1;
-                                deposits.push((ox_pos, oy_pos, 0.0, 0.0, 0.10, 0.0));
-                            } else if affinity > 0.35 && my_energy > o_energy + 8.0 {
-                                // Genuine Symbiosis: zero-sum energy sharing from richer to poorer partner
-                                let transfer = ((my_energy - o_energy) * 0.04).min(1.2);
+                                deposits.push((snap[j].0, snap[j].1, 0.0, 0.0, 0.10, 0.0));
+                            } else if self.organisms[i].lineage_id == self.organisms[j].lineage_id
+                                && snap[i].6 > snap[j].6 + 10.0
+                            {
+                                // Kin / Colonial Symbiosis: zero-sum energy sharing
+                                let transfer = ((snap[i].6 - snap[j].6) * 0.035).min(1.0);
                                 energy_delta[i] -= transfer;
                                 energy_delta[j] += transfer;
                             }
-                        } else {
-                            let pull = affinity * 0.00040 / d.max(0.04);
-                            fx += (dx / d) * pull;
-                            fy += (dy / d) * pull;
                         }
                     }
                 }
             }
 
             let org = &mut self.organisms[i];
-            org.vx = (org.vx + fx) * 0.88;
-            org.vy = (org.vy + fy) * 0.88;
-            // Seamless toroidal wrapping eliminates boundary congregation completely!
+            org.vx = (org.vx + fx) * pheno.drag_factor;
+            org.vy = (org.vy + fy) * pheno.drag_factor;
             org.x = wrap_world_coord(org.x + org.vx);
             org.y = wrap_world_coord(org.y + org.vy);
 
-            // Smoothly orient organism heading toward actual swimming velocity
-            let speed = (org.vx * org.vx + org.vy * org.vy).sqrt();
-            if speed > 0.0008 {
-                let target_h = org.vy.atan2(org.vx);
-                let mut diff = (target_h - org.body.heading).rem_euclid(TAU);
-                if diff > std::f32::consts::PI {
-                    diff -= TAU;
-                }
-                org.body.heading = (org.body.heading + diff * 0.08).rem_euclid(TAU);
-            }
+            // Digestive Biology:
+            // 1. Filter/absorb dissolved ambient nutrients into stomach_plant
+            let free_stomach =
+                (pheno.stomach_capacity - (org.stomach_plant + org.stomach_meat)).max(0.0);
+            let absorbed_plant = (local.nutrient
+                * pheno.filter_efficiency
+                * (1.15 - org.genomorph.diet_carnivory * 0.70)
+                * 1.35)
+                .min(free_stomach);
+            org.stomach_plant += absorbed_plant;
 
-            // Coherent metabolic accounting:
-            // - Nutrient absorption scales with membrane surface area
-            // - Maintenance costs scale with cytoplasm mass, membrane mass, and kinetic speed^2
+            // 2. Gradual digestion converts stomach_plant & stomach_meat into usable energy
+            let dig = org.genomorph.digestion_rate;
+            let plant_dig = (org.stomach_plant * 0.09 * dig).min(org.stomach_plant);
+            let meat_dig = (org.stomach_meat * 0.12 * dig).min(org.stomach_meat);
+            org.stomach_plant -= plant_dig;
+            org.stomach_meat -= meat_dig;
+
+            let plant_eff = 1.15 - org.genomorph.diet_carnivory * 0.72;
+            let meat_eff = 0.40 + org.genomorph.diet_carnivory * 0.95;
+            let gained_energy = plant_dig * plant_eff * 1.45 + meat_dig * meat_eff * 1.85;
+
+            // 3. Coherent Metabolic Costs (anatomy + Lenia mass + swimming + digestion + senescence)
             let speed2 = org.vx * org.vx + org.vy * org.vy;
-            let absorption = local.nutrient
-                * (0.42 + m.membrane_mass * 2.4)
-                * org.morph_genome.nutrient_sensitivity;
-            let maintenance = (0.14
-                + m.mass * 0.95
-                + m.membrane_mass * 0.45
-                + speed2 * 120.0
-                + org.eco_genome.metabolism * 2.0)
+            let senescence = if org.life_stage == LifeStage::Elder {
+                1.45
+            } else {
+                1.0
+            };
+            let maintenance = (0.10
+                + pheno.total_metabolic_cost
+                + m.mass * 0.65
+                + speed2 * 135.0
+                + dig * 0.08)
                 * env.hunger_mult()
-                * self.universe.metabolic_cost_mult;
+                * self.universe.metabolic_cost_mult
+                * senescence;
 
-            org.energy = (org.energy + absorption * 1.40 - maintenance - local.toxin * 0.65)
-                .clamp(0.0, 150.0);
+            org.energy = (org.energy + gained_energy - maintenance - local.toxin * 0.55)
+                .clamp(0.0, 160.0);
 
-            // Neural secretion + metabolic footprint into EcoField
-            let d_nutr = -(absorption * 0.048).min(0.09);
-            let d_pher = if brain_out[2] > 0.15 && org.energy > 40.0 {
-                0.03 * brain_out[2]
+            // Chemical secretion scaled by ToxinGland
+            let d_nutr = -(absorbed_plant * 0.045).min(0.08);
+            let d_pher = if out[3] > 0.20 && org.energy > 35.0 {
+                0.03 * out[3] * pheno.toxin_capacity
             } else {
                 0.0
             };
-            let d_tox = if brain_out[2] < -0.25 {
-                0.025 * (-brain_out[2])
+            let d_tox = if out[3] < -0.25 {
+                0.03 * (-out[3]) * pheno.toxin_capacity
             } else {
                 0.0
             };
             deposits.push((org.x, org.y, d_nutr, d_pher, d_tox, 0.0));
         }
 
-        // Apply deferred physical predation damage, energy transfers, discovery checks, death & mitosis
+        // Apply deferred predation damage, meat intake, discovery checks, death, and reproduction
         for i in 0..count {
             if !self.organisms[i].alive {
                 continue;
@@ -420,7 +580,14 @@ impl ConvergenceWorld {
             if damage_to[i] > 0.0 {
                 self.organisms[i].body.apply_damage(damage_to[i]);
             }
-            self.organisms[i].energy = (self.organisms[i].energy + energy_delta[i]).clamp(0.0, 150.0);
+            if meat_gained[i] > 0.0 {
+                let cap = self.organisms[i].phenotype.stomach_capacity;
+                let room = (cap - (self.organisms[i].stomach_plant + self.organisms[i].stomach_meat))
+                    .max(0.0);
+                self.organisms[i].stomach_meat += meat_gained[i].min(room);
+            }
+            self.organisms[i].energy =
+                (self.organisms[i].energy + energy_delta[i]).clamp(0.0, 160.0);
 
             let m = self.organisms[i].body.metrics;
 
@@ -434,39 +601,60 @@ impl ConvergenceWorld {
                     o.energy,
                     o.age,
                     o.morph_genome,
+                    &o.genomorph,
+                    &o.brain,
                     m,
                     self.tick,
                 );
             }
 
             // Death & organic decomposition back into EcoField
-            if self.organisms[i].energy <= 1.0 || m.mass < 0.012 {
+            if self.organisms[i].energy <= 1.0
+                || m.mass < 0.012
+                || self.organisms[i].age > self.organisms[i].genomorph.max_age + 800
+            {
                 self.organisms[i].alive = false;
                 self.total_deaths += 1;
-                deaths_lineage.push(self.organisms[i].lineage_id);
-                let recycled = (0.25 + m.mass * 1.9).clamp(0.15, 0.90);
-                deposits.push((self.organisms[i].x, self.organisms[i].y, recycled, 0.0, 0.03, 0.0));
+                deaths_rec.push((self.organisms[i].id, self.organisms[i].lineage_id));
+                let recycled = (0.25
+                    + m.mass * 1.9
+                    + (self.organisms[i].stomach_plant + self.organisms[i].stomach_meat) * 0.015)
+                    .clamp(0.18, 0.95);
+                deposits.push((
+                    self.organisms[i].x,
+                    self.organisms[i].y,
+                    recycled,
+                    0.0,
+                    0.03,
+                    0.0,
+                ));
                 continue;
             }
 
-            // Mitotic reproduction
-            if self.organisms[i].energy > 88.0
-                && m.mass > 0.075
+            // Mature Reproduction (requires Adult stage + sufficient energy + non-collapsed body)
+            if self.organisms[i].maturity >= 0.85
+                && self.organisms[i].energy > 90.0
+                && m.mass > 0.065
                 && count + new_offspring.len() < max_orgs
             {
                 let mut_rate = self.universe.mutation_rate
-                    * if env == Environment::Storm { 1.5 } else { 1.0 };
+                    * if env == Environment::Storm { 1.4 } else { 1.0 };
                 let child_morph = self.organisms[i].morph_genome.mutate(&mut self.rng, mut_rate);
-                let child_brain = self.organisms[i].brain.mutate(&mut self.rng, mut_rate * 1.4);
+                let child_geno = self.organisms[i].genomorph.mutate(&mut self.rng, mut_rate);
+                let child_brain = self.organisms[i].brain.mutate(&mut self.rng, mut_rate * 1.35);
                 let mut child_eco = self.organisms[i].eco_genome;
                 child_eco.metabolism =
                     (child_eco.metabolism + self.rng.gen_range(-0.004..0.004)).clamp(0.01, 0.12);
-                child_eco.membrane =
-                    (child_eco.membrane + self.rng.gen_range(-0.05..0.05)).clamp(0.1, 1.4);
+
+                let invest = self.organisms[i].genomorph.repro_investment;
+                let child_energy = self.organisms[i].energy * invest;
+                self.organisms[i].energy *= 1.0 - invest;
+                self.organisms[i].offspring_count += 1;
 
                 let daughter_body = self.organisms[i].body.divide(&child_morph, &mut self.rng);
-                self.organisms[i].energy *= 0.48;
-                self.organisms[i].offspring_count += 1;
+                let child_maturity = 0.30;
+                let child_pheno =
+                    AnatomyPhenotype::express(&child_geno, child_maturity, daughter_body.pulse_phase);
 
                 let angle = self.rng.gen_range(0.0..TAU);
                 let child_id = self.next_org_id;
@@ -475,8 +663,16 @@ impl ConvergenceWorld {
 
                 let parent = &self.organisms[i];
                 let child_gen = parent.generation + 1;
-                self.phylogeny
-                    .record_birth(parent.lineage_id, parent.tribe, child_gen, self.tick);
+                self.phylogeny.record_birth(
+                    child_id,
+                    Some(parent.id),
+                    parent.lineage_id,
+                    parent.tribe,
+                    child_gen,
+                    self.tick,
+                    &child_geno,
+                    &child_brain,
+                );
 
                 new_offspring.push(MorphOrganism {
                     id: child_id,
@@ -487,13 +683,19 @@ impl ConvergenceWorld {
                     archetype: derive_archetype(child_eco, crate::particle::RareTrait::None, 8),
                     eco_genome: child_eco,
                     morph_genome: child_morph,
+                    genomorph: child_geno,
+                    phenotype: child_pheno,
                     brain: child_brain,
                     body: daughter_body,
-                    x: (parent.x + angle.cos() * 0.05).clamp(-0.92, 0.92),
-                    y: (parent.y + angle.sin() * 0.05).clamp(-0.92, 0.92),
+                    x: wrap_world_coord(parent.x + angle.cos() * 0.06),
+                    y: wrap_world_coord(parent.y + angle.sin() * 0.06),
                     vx: angle.cos() * 0.004,
                     vy: angle.sin() * 0.004,
-                    energy: parent.energy,
+                    energy: child_energy,
+                    stomach_plant: 4.0,
+                    stomach_meat: 0.0,
+                    maturity: child_maturity,
+                    life_stage: LifeStage::Embryo,
                     age: 0,
                     offspring_count: 0,
                     alive: true,
@@ -501,8 +703,8 @@ impl ConvergenceWorld {
             }
         }
 
-        for lin in deaths_lineage {
-            self.phylogeny.record_death(lin, self.tick);
+        for (oid, lin) in deaths_rec {
+            self.phylogeny.record_death(oid, lin, self.tick);
         }
         for (x, y, dn, dp, dt, dr) in deposits {
             self.eco_field.deposit_world(x, y, dn, dp, dt, dr);
@@ -511,17 +713,24 @@ impl ConvergenceWorld {
         self.organisms.retain(|o| o.alive);
         self.organisms.extend(new_offspring);
 
-        // Configurable abiogenesis floor (can be disabled for permanent extinction experiments)
+        // Configurable abiogenesis floor (disabled in Genesis Zero, Abyssal, Arena, etc.)
         if self.universe.allow_abiogenesis && self.organisms.len() < 8 && self.tick % 20 == 0 {
             let tribe = Tribe::from_index(self.rng.gen_range(0..6));
             let eco_genome = random_eco_genome(&mut self.rng);
             let morph_genome = MorphGenome::from_ecological(eco_genome, tribe, &mut self.rng);
-            let brain = NeuralBrain::random(&mut self.rng);
+            let genomorph = if self.universe.minimal_founders {
+                GenomorphGenome::minimal_founder(&mut self.rng)
+            } else {
+                GenomorphGenome::from_tribe(tribe, &mut self.rng)
+            };
+            let brain = NeuralGraph::minimal(&mut self.rng);
             let heading = self.rng.gen_range(0.0..TAU);
             let body = LeniaBody::new(&morph_genome, heading, &mut self.rng);
+            let phenotype = AnatomyPhenotype::express(&genomorph, 0.55, body.pulse_phase);
             let id = self.next_org_id;
             self.next_org_id += 1;
-            self.phylogeny.record_birth(id, tribe, 0, self.tick);
+            self.phylogeny
+                .record_birth(id, None, id, tribe, 0, self.tick, &genomorph, &brain);
 
             self.organisms.push(MorphOrganism {
                 id,
@@ -532,13 +741,19 @@ impl ConvergenceWorld {
                 archetype: derive_archetype(eco_genome, crate::particle::RareTrait::None, 6),
                 eco_genome,
                 morph_genome,
+                genomorph,
+                phenotype,
                 brain,
                 body,
                 x: self.rng.gen_range(-0.8..0.8),
                 y: self.rng.gen_range(-0.8..0.8),
                 vx: 0.0,
                 vy: 0.0,
-                energy: 55.0,
+                energy: 58.0,
+                stomach_plant: 8.0,
+                stomach_meat: 0.0,
+                maturity: 0.55,
+                life_stage: LifeStage::Juvenile,
                 age: 0,
                 offspring_count: 0,
                 alive: true,
@@ -547,7 +762,6 @@ impl ConvergenceWorld {
     }
 
     fn trigger_catastrophe(&mut self) {
-        // Inject a toxin wave and deplete half of ambient nutrients
         for i in 0..(self.eco_field.width * self.eco_field.height) {
             let idx = i * 4;
             self.eco_field.cells[idx] *= 0.45;
@@ -559,6 +773,9 @@ impl ConvergenceWorld {
         let n = self.organisms.len();
         let inv = if n > 0 { 1.0 / n as f32 } else { 0.0 };
 
+        let mut genes = 0.0;
+        let mut synapses = 0.0;
+        let mut carn = 0.0;
         let mut mass = 0.0;
         let mut mem = 0.0;
         let mut org_m = 0.0;
@@ -569,6 +786,9 @@ impl ConvergenceWorld {
         let mut max_gen = 0;
 
         for o in &self.organisms {
+            genes += o.genomorph.genes.len() as f32;
+            synapses += o.brain.active_connection_count() as f32;
+            carn += o.genomorph.diet_carnivory;
             mass += o.body.metrics.mass;
             mem += o.body.metrics.membrane_mass;
             org_m += o.body.metrics.organelle_mass;
@@ -585,6 +805,9 @@ impl ConvergenceWorld {
             active_lineages: self.phylogeny.active_lineage_count(),
             archive_discoveries: self.phylogeny.filled_archive_cells(),
             extinction_events: self.phylogeny.extinction_events,
+            mean_genes: genes * inv,
+            mean_synapses: synapses * inv,
+            mean_carnivory: carn * inv,
             mean_mass: mass * inv,
             mean_membrane: mem * inv,
             mean_organelle: org_m * inv,
@@ -602,9 +825,24 @@ impl ConvergenceWorld {
     }
 }
 
+fn stage_from_maturity(maturity: f32, age: u64, max_age: u64) -> LifeStage {
+    if maturity < 0.45 {
+        LifeStage::Embryo
+    } else if maturity < 0.85 {
+        LifeStage::Juvenile
+    } else if age > max_age {
+        LifeStage::Elder
+    } else {
+        LifeStage::Adult
+    }
+}
+
 #[inline]
 fn hash_cell(x: f32, y: f32) -> (i32, i32) {
-    ((x / HASH_CELL_SIZE).floor() as i32, (y / HASH_CELL_SIZE).floor() as i32)
+    (
+        (x / HASH_CELL_SIZE).floor() as i32,
+        (y / HASH_CELL_SIZE).floor() as i32,
+    )
 }
 
 #[inline]

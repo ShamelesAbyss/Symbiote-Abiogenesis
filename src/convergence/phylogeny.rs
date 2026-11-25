@@ -1,15 +1,18 @@
-//! Evolutionary Tree of Life & Automated MAP-Elites Discovery Archive.
+//! Evolutionary Tree of Life, Individual Ancestry Records & MAP-Elites Discovery Archive.
 //!
-//! Tracks founding lineages, parent-child ancestry, extinction events,
-//! and automatically discovers morphologically and behaviorally diverse
-//! organisms using a 2D Quality-Diversity (MAP-Elites) grid.
+//! Preserves individual organism snapshots (`OrganismRecord`) so the Research Laboratory
+//! can perform direct parent-offspring and ancestor-descendant anatomical comparisons
+//! (`diff_genomes`) and resurrect archived MAP-Elites specimens as explicit user interventions.
 
+use crate::convergence::genomorph::{GenomorphGenome, OrganKind};
 use crate::convergence::lenia_body::{BodyMetrics, MorphGenome};
+use crate::convergence::neural_graph::NeuralGraph;
 use crate::particle::Tribe;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub const ARCHIVE_BINS: usize = 6;
+const MAX_HISTORY_RECORDS: usize = 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LineageRecord {
@@ -24,6 +27,20 @@ pub struct LineageRecord {
     pub extinct: bool,
 }
 
+/// Historical snapshot of an individual organism for generational anatomical comparisons.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OrganismRecord {
+    pub id: u64,
+    pub parent_id: Option<u64>,
+    pub lineage_id: u64,
+    pub generation: u32,
+    pub birth_tick: u64,
+    pub death_tick: Option<u64>,
+    pub genomorph: GenomorphGenome,
+    pub hidden_neurons: usize,
+    pub active_synapses: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DiscoveryEntry {
     pub organism_id: u64,
@@ -34,13 +51,17 @@ pub struct DiscoveryEntry {
     pub label: String,
     pub fitness: f32,
     pub morph_genome: MorphGenome,
+    pub genomorph: GenomorphGenome,
+    pub brain: NeuralGraph,
     pub metrics: BodyMetrics,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PhylogenyArchive {
     pub lineages: HashMap<u64, LineageRecord>,
-    /// 6x6 MAP-Elites grid: [elongation_bin][activity_bin] -> best discovered organism
+    /// Individual organism ancestry records indexed by `organism_id`.
+    pub history: HashMap<u64, OrganismRecord>,
+    /// 6x6 MAP-Elites grid: [anatomical_complexity_bin][diet/locomotion_bin]
     pub map_elites: Vec<Option<DiscoveryEntry>>,
     pub total_discoveries: u64,
     pub extinction_events: u64,
@@ -50,13 +71,24 @@ impl PhylogenyArchive {
     pub fn new() -> Self {
         Self {
             lineages: HashMap::new(),
+            history: HashMap::new(),
             map_elites: vec![None; ARCHIVE_BINS * ARCHIVE_BINS],
             total_discoveries: 0,
             extinction_events: 0,
         }
     }
 
-    pub fn record_birth(&mut self, lineage_id: u64, tribe: Tribe, generation: u32, tick: u64) {
+    pub fn record_birth(
+        &mut self,
+        org_id: u64,
+        parent_id: Option<u64>,
+        lineage_id: u64,
+        tribe: Tribe,
+        generation: u32,
+        tick: u64,
+        genomorph: &GenomorphGenome,
+        brain: &NeuralGraph,
+    ) {
         let entry = self.lineages.entry(lineage_id).or_insert(LineageRecord {
             lineage_id,
             founder_tribe: tribe,
@@ -73,9 +105,38 @@ impl PhylogenyArchive {
         entry.max_generation = entry.max_generation.max(generation);
         entry.last_seen_tick = tick;
         entry.extinct = false;
+
+        // Keep founders and recent organisms bounded for long-duration runs
+        if self.history.len() >= MAX_HISTORY_RECORDS {
+            if let Some((&evict_id, _)) = self
+                .history
+                .iter()
+                .filter(|(_, r)| r.parent_id.is_some() && r.death_tick.is_some())
+                .min_by_key(|(_, r)| r.birth_tick)
+            {
+                self.history.remove(&evict_id);
+            }
+        }
+        self.history.insert(
+            org_id,
+            OrganismRecord {
+                id: org_id,
+                parent_id,
+                lineage_id,
+                generation,
+                birth_tick: tick,
+                death_tick: None,
+                genomorph: genomorph.clone(),
+                hidden_neurons: brain.hidden_count(),
+                active_synapses: brain.active_connection_count(),
+            },
+        );
     }
 
-    pub fn record_death(&mut self, lineage_id: u64, tick: u64) {
+    pub fn record_death(&mut self, org_id: u64, lineage_id: u64, tick: u64) {
+        if let Some(rec) = self.history.get_mut(&org_id) {
+            rec.death_tick = Some(tick);
+        }
         if let Some(entry) = self.lineages.get_mut(&lineage_id) {
             entry.living_members = entry.living_members.saturating_sub(1);
             entry.last_seen_tick = tick;
@@ -86,7 +147,7 @@ impl PhylogenyArchive {
         }
     }
 
-    /// Evaluate an organism for the MAP-Elites Quality-Diversity Discovery Archive.
+    #[allow(clippy::too_many_arguments)]
     pub fn consider_discovery(
         &mut self,
         org_id: u64,
@@ -96,13 +157,15 @@ impl PhylogenyArchive {
         energy: f32,
         age: u64,
         morph_genome: MorphGenome,
+        genomorph: &GenomorphGenome,
+        brain: &NeuralGraph,
         metrics: BodyMetrics,
         tick: u64,
     ) {
         if self.map_elites.len() != ARCHIVE_BINS * ARCHIVE_BINS {
             self.map_elites = vec![None; ARCHIVE_BINS * ARCHIVE_BINS];
         }
-        if age < 40 || metrics.mass < 0.04 {
+        if age < 35 || metrics.mass < 0.03 {
             return;
         }
 
@@ -111,23 +174,26 @@ impl PhylogenyArchive {
             lin.last_seen_tick = tick;
         }
 
-        // Behavior-Morphology descriptors:
-        // Axis 0: Morphological elongation (0.0..0.75)
-        // Axis 1: Organelle/membrane complexity & activity
-        let b0 = ((metrics.elongation / 0.75) * ARCHIVE_BINS as f32)
+        // MAP-Elites Niches:
+        // Axis 0: Anatomical gene complexity (2..14 genes)
+        // Axis 1: Dietary specialization (0.0 herbivore .. 1.0 carnivore)
+        let b0 = (((genomorph.genes.len().saturating_sub(2)) as f32 / 10.0) * ARCHIVE_BINS as f32)
             .clamp(0.0, (ARCHIVE_BINS - 1) as f32) as usize;
-        let complexity = (metrics.membrane_mass * 4.0 + metrics.organelle_mass * 5.0).clamp(0.0, 1.0);
-        let b1 = (complexity * ARCHIVE_BINS as f32).clamp(0.0, (ARCHIVE_BINS - 1) as f32) as usize;
+        let b1 = (genomorph.diet_carnivory * ARCHIVE_BINS as f32)
+            .clamp(0.0, (ARCHIVE_BINS - 1) as f32) as usize;
         let idx = b0 * ARCHIVE_BINS + b1;
 
-        let fitness = energy * 0.6 + (age as f32).sqrt() * 2.5 + generation as f32 * 4.0;
+        let fitness = energy * 0.55
+            + (age as f32).sqrt() * 2.4
+            + generation as f32 * 5.0
+            + brain.active_connection_count() as f32 * 0.4;
         let should_insert = match &self.map_elites[idx] {
             None => true,
             Some(existing) => fitness > existing.fitness * 1.08,
         };
 
         if should_insert {
-            let label = classify_morphology(&morph_genome, &metrics);
+            let label = classify_genomorph(genomorph);
             self.map_elites[idx] = Some(DiscoveryEntry {
                 organism_id: org_id,
                 lineage_id,
@@ -137,6 +203,8 @@ impl PhylogenyArchive {
                 label,
                 fitness,
                 morph_genome,
+                genomorph: genomorph.clone(),
+                brain: brain.clone(),
                 metrics,
             });
             self.total_discoveries += 1;
@@ -152,26 +220,29 @@ impl PhylogenyArchive {
     }
 }
 
-fn classify_morphology(g: &MorphGenome, m: &BodyMetrics) -> String {
-    let shape = if m.elongation > 0.45 {
-        "Serpentiform"
-    } else if g.spiral_twist.abs() > 1.2 {
-        "Vortex"
-    } else if g.angular_lobes >= 4.5 {
-        "Stellate"
-    } else if g.angular_lobes >= 2.5 {
-        "Medusoid"
-    } else if g.asymmetry > 0.25 {
-        "Glider"
+pub fn classify_genomorph(g: &GenomorphGenome) -> String {
+    let has_jaws = g.genes.iter().any(|x| x.enabled && x.kind == OrganKind::FeedingJaw);
+    let has_armor = g.genes.iter().any(|x| x.enabled && x.kind == OrganKind::ArmorCarapace);
+    let has_tail = g.genes.iter().any(|x| x.enabled && x.kind == OrganKind::UndulatingTail);
+    let segs = g.genes.iter().filter(|x| x.enabled && x.kind == OrganKind::BodySegment).count();
+
+    let diet = if g.diet_carnivory > 0.62 {
+        "Predatory"
+    } else if g.diet_carnivory < 0.28 {
+        "Filter"
     } else {
-        "Orbium"
+        "Omnivorous"
     };
-    let cortex = if m.membrane_mass > 0.04 {
-        "Armored"
-    } else if m.organelle_mass > 0.03 {
-        "Luminous"
+    let form = if segs >= 2 {
+        "Serpent"
+    } else if has_jaws && has_tail {
+        "Hunter"
+    } else if has_armor {
+        "Carapace"
+    } else if has_tail {
+        "Swimmer"
     } else {
-        "Translucent"
+        "Drifter"
     };
-    format!("{cortex} {shape}")
+    format!("{diet} {form} ({}g)", g.genes.len())
 }

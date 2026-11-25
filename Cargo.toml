@@ -1,8 +1,8 @@
 [package]
 name = "symbiote-abiogenesis"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
-description = "Symbiote: Abiogenesis — Evolution Unbound. Multichannel continuous cellular morphogenesis, adaptive neural ecology, and GPU bioluminescent research observatory."
+description = "Symbiote: Abiogenesis v0.4.0 (Project GENOMORPH) — Procedural heritable anatomy, NEAT neural evolution, multichannel Lenia morphology, and GPU bioluminescent research observatory."
 
 [features]
 default = ["gpu", "observatory"]

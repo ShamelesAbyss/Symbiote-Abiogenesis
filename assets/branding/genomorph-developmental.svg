@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" width="1200" height="320" role="img" aria-label="GENOMORPH Developmental Genetics, Procedural Anatomy, and NEAT NeuralGraph Architecture">
+  <defs>
+    <linearGradient id="g-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050810"/>
+      <stop offset="50%" stop-color="#081923"/>
+      <stop offset="100%" stop-color="#050810"/>
+    </linearGradient>
+    <marker id="g-arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38F9D7"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="320" rx="12" fill="url(#g-bg)" stroke="#38F9D7" stroke-opacity="0.22" stroke-width="1.2"/>
+
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <text x="36" y="36" font-size="13" font-weight="700" letter-spacing="2.8" fill="#38F9D7">PROJECT GENOMORPH · DEVELOPMENTAL GENOME TO FUNCTIONAL ANATOMY</text>
+    <text x="1164" y="36" text-anchor="end" font-size="11" fill="#94A3B8">v0.4.0 · Stable Homology Gene IDs + NEAT NeuralGraph + Artificial Embryogenesis</text>
+    <line x1="36" y1="48" x2="1164" y2="48" stroke="#38F9D7" stroke-opacity="0.16" stroke-width="1"/>
+
+    <!-- Card 1: GenomorphGenome -->
+    <rect x="36" y="70" width="252" height="218" rx="9" fill="#0B1D2B" stroke="#38F9D7" stroke-opacity="0.50" stroke-width="1.2"/>
+    <text x="52" y="96" font-size="11" font-weight="700" letter-spacing="1.8" fill="#38F9D7">01 · GENOMORPH GENOME</text>
+    <text x="52" y="120" font-size="13.5" font-weight="700" fill="#E2E8F0">Hierarchical Gene Tree</text>
+    <text x="52" y="144" font-size="11" fill="#94A3B8">• Persistent homology gene_id</text>
+    <text x="52" y="162" font-size="11" fill="#94A3B8">• Parent attachment &amp; symmetry</text>
+    <text x="52" y="180" font-size="11" fill="#94A3B8">• Duplicate / Delete / Sprout</text>
+    <text x="52" y="198" font-size="11" fill="#94A3B8">• Specialize &amp; Symmetry-Flip</text>
+    <text x="52" y="216" font-size="11" fill="#94A3B8">• Homology-matched crossover</text>
+    <text x="52" y="242" font-size="10.5" fill="#FBBF24">diet_carnivory · digestion_rate</text>
+    <text x="52" y="258" font-size="10.5" fill="#FBBF24">base_scale · repro_investment</text>
+
+    <!-- Card 2: Embryogenesis & Phenotype -->
+    <rect x="328" y="70" width="256" height="218" rx="9" fill="#0F1B2E" stroke="#38BDF8" stroke-opacity="0.50" stroke-width="1.2"/>
+    <text x="344" y="96" font-size="11" font-weight="700" letter-spacing="1.8" fill="#38BDF8">02 · EMBRYOGENESIS</text>
+    <text x="344" y="120" font-size="13.5" font-weight="700" fill="#E2E8F0">10 Functional Organ Kinds</text>
+    <text x="344" y="144" font-size="11" fill="#BAE6FD">• CoreSoma &amp; BodySegments</text>
+    <text x="344" y="162" font-size="11" fill="#BAE6FD">• PropulsionFins &amp; UndulatingTails</text>
+    <text x="344" y="180" font-size="11" fill="#FDA4AF">• FeedingJaws (directional bite)</text>
+    <text x="344" y="198" font-size="11" fill="#6EE7B7">• FilterVeils &amp; DigestiveVacuoles</text>
+    <text x="344" y="216" font-size="11" fill="#C4B5FD">• SensoryAntennae &amp; ArmorCarapace</text>
+    <text x="344" y="242" font-size="10.5" fill="#38F9D7">Embryo (25%) → Juvenile → Adult</text>
+    <text x="344" y="258" font-size="10.5" fill="#94A3B8">Coupled with 40×40×3 Lenia Body</text>
+
+    <!-- Card 3: NEAT NeuralGraph -->
+    <rect x="624" y="70" width="252" height="218" rx="9" fill="#17132D" stroke="#A78BFA" stroke-opacity="0.50" stroke-width="1.2"/>
+    <text x="640" y="96" font-size="11" font-weight="700" letter-spacing="1.8" fill="#A78BFA">03 · NEAT NEURALGRAPH</text>
+    <text x="640" y="120" font-size="13.5" font-weight="700" fill="#E2E8F0">Evolvable Sensorimotor Net</text>
+    <text x="640" y="144" font-size="11" fill="#DDD6FE">• 10 Grounded Sensory Inputs</text>
+    <text x="640" y="162" font-size="11" fill="#DDD6FE">• Range gated by SensoryAntenna</text>
+    <text x="640" y="180" font-size="11" fill="#DDD6FE">• AddNode (edge-split) &amp; AddConn</text>
+    <text x="640" y="198" font-size="11" fill="#DDD6FE">• Tanh · Sigmoid · Sin · ReLU</text>
+    <text x="640" y="216" font-size="11" fill="#DDD6FE">• 4 Outputs: Thrust, Turn, Bite, Secrete</text>
+    <text x="640" y="242" font-size="10.5" fill="#38F9D7">Live activation visualizer in Lab UI</text>
+    <text x="640" y="258" font-size="10.5" fill="#94A3B8">Innovation-tracked synapses</text>
+
+    <!-- Card 4: Selection & Lineage Diff -->
+    <rect x="916" y="70" width="248" height="218" rx="9" fill="#231226" stroke="#F472B6" stroke-opacity="0.50" stroke-width="1.2"/>
+    <text x="932" y="96" font-size="11" font-weight="700" letter-spacing="1.8" fill="#F472B6">04 · SELECTION &amp; DIFF</text>
+    <text x="932" y="120" font-size="13.5" font-weight="700" fill="#E2E8F0">Coherent Evolution</text>
+    <text x="932" y="144" font-size="11" fill="#F9A8D4">• Gradual plant/meat digestion</text>
+    <text x="932" y="162" font-size="11" fill="#F9A8D4">• Armor vs. Jaw predation physics</text>
+    <text x="932" y="180" font-size="11" fill="#F9A8D4">• Kin symbiosis &amp; decomposition</text>
+    <text x="932" y="198" font-size="11" fill="#F9A8D4">• Parent-Offspring Homology Diff</text>
+    <text x="932" y="216" font-size="11" fill="#F9A8D4">• 6×6 MAP-Elites + Resurrection</text>
+    <text x="932" y="242" font-size="10.5" fill="#34D399">Versioned v3 Atomic Persistence</text>
+    <text x="932" y="258" font-size="10.5" fill="#94A3B8">Experiments A–J verified in CI</text>
+
+    <!-- Arrows -->
+    <line x1="288" y1="178" x2="324" y2="178" stroke="#38F9D7" stroke-width="2" marker-end="url(#g-arr)"/>
+    <line x1="584" y1="178" x2="620" y2="178" stroke="#38F9D7" stroke-width="2" marker-end="url(#g-arr)"/>
+    <line x1="876" y1="178" x2="912" y2="178" stroke="#38F9D7" stroke-width="2" marker-end="url(#g-arr)"/>
+  </g>
+</svg>

@@ -11,7 +11,7 @@ env:
 
 jobs:
   validate-cpu:
-    name: Pure CPU Build & Validation (${{ matrix.os }})
+    name: Pure CPU Build, Tests & Experiments (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -22,6 +22,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check pure CPU build (--no-default-features)
         run: cargo check --no-default-features
+      - name: Run automated scientific tests (Experiments A-J)
+        run: cargo test --no-default-features
       - name: Run convergence experiments (CPU-Rayon)
         run: cargo run --release --no-default-features -- --experiment --cpu
 
