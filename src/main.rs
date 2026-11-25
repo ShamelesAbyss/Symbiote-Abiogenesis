@@ -29,6 +29,12 @@ use std::{
 };
 
 fn main() -> Result<()> {
+    convergence::crash_log::install_panic_hook();
+    convergence::crash_log::log_event(&format!(
+        "startup v{} args={:?}",
+        env!("CARGO_PKG_VERSION"),
+        env::args().skip(1).collect::<Vec<_>>()
+    ));
     let args: Vec<String> = env::args().collect();
     let force_cpu = args.iter().any(|a| a == "--cpu");
 

@@ -2,6 +2,13 @@
 
 All notable changes to **Symbiote: Abiogenesis** are documented in this file.
 
+## [0.3.2] - 2026-11-24 — Surface Lifecycle & Crash Diagnostics
+### Added & Fixed
+- **Persistent Crash & Runtime Logging** (`src/convergence/crash_log.rs`): Global panic hook writing full Rust backtraces to `logs/crash_<timestamp>.log` and GPU/window lifecycle events to `logs/runtime.log`.
+- **Fullscreen, Minimize & Leak Hardening** (`src/convergence/observatory.rs`):
+  - Eliminated per-frame multi-MB heap allocations by reusing persistent GPU upload scratch buffers across frames and fullscreen transitions.
+  - Added explicit `is_minimized` guards (zero rendering on `0×0` swapchain), pre-render physical size synchronization, `SurfaceError::OutOfMemory` logging, `device.poll(Maintain::Poll)` reclamation, and `Alt+Enter` + `F11` borderless fullscreen support.
+
 ## [0.3.1] - 2026-11-24 — Fullscreen & High-DPI Fix
 ### Fixed
 - **Fullscreen / Maximize Crash on >2048px Displays (e.g. 2560×1440)**: Replaced `wgpu::Limits::downlevel_defaults()` (which capped `max_texture_dimension_2d` at `2048px`) with `wgpu::Limits::default().using_resolution(adapter.limits())` in `observatory.rs` and `gpu_compute.rs`.

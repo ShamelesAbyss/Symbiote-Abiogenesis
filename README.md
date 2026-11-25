@@ -7,14 +7,14 @@
 **An experimental artificial biosphere where mathematics becomes morphology, genomes become behavior, and ecosystems develop their own history.**<br>
 Built in native Rust, Rayon, `wgpu` 24 / WGSL, and `egui` 0.31 — uniting continuous cellular automata with adaptive ecological selection.
 
-[![Release](https://img.shields.io/badge/release-v0.3.1_Bioluminescence-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.3.1)
+[![Release](https://img.shields.io/badge/release-v0.3.2_Bioluminescence-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.3.2)
 [![CI](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/actions/workflows/ci.yml/badge.svg)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/engine-Rust_2021-FBBF24?style=flat-square&labelColor=050810)](Cargo.toml)
 [![GPU](https://img.shields.io/badge/GPU-wgpu_24_%2F_WGSL-A78BFA?style=flat-square&labelColor=050810)](src/convergence/gpu_compute.rs)
 [![UI](https://img.shields.io/badge/observatory-egui_0.31-38BDF8?style=flat-square&labelColor=050810)](src/convergence/observatory.rs)
 [![License](https://img.shields.io/badge/license-MIT-34D399?style=flat-square&labelColor=050810)](LICENSE)
 
-[![Windows Native](https://img.shields.io/badge/Windows-x64_Executable-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.3.1/symbiote-abiogenesis-v0.3.1-windows-x86_64.exe)
+[![Windows Native](https://img.shields.io/badge/Windows-x64_Executable-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.3.2/symbiote-abiogenesis-v0.3.2-windows-x86_64.exe)
 [![CPU Fallback](https://img.shields.io/badge/CPU_fallback-Rayon_%2F_no--gpu-34D399?style=flat-square&labelColor=050810)](docs/ARCHITECTURE.md)
 [![Automated Tests](https://img.shields.io/badge/tests-3_passing_in_CI-F472B6?style=flat-square&labelColor=050810)](src/convergence/experiments.rs)
 [![Persistence](https://img.shields.io/badge/worlds-Atomic_v2_JSON-A78BFA?style=flat-square&labelColor=050810)](src/convergence/persistence.rs)
@@ -44,7 +44,7 @@ Every organism in Abiogenesis is not a decorative sprite or point particle. Each
 ## Download & Quick Start
 
 ### Windows Native Executable (Recommended)
-1. Download **[`symbiote-abiogenesis-v0.3.1-windows-x86_64.exe`](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.3.1/symbiote-abiogenesis-v0.3.1-windows-x86_64.exe)** from the [v0.3.1 Project Bioluminescence Release](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.3.1).
+1. Download **[`symbiote-abiogenesis-v0.3.2-windows-x86_64.exe`](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.3.2/symbiote-abiogenesis-v0.3.2-windows-x86_64.exe)** from the [v0.3.2 Release](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.3.2).
 2. Double-click the executable to launch the native **Abiogenesis Research Laboratory** immediately.
 3. Click any organism to track and inspect its cellular body and genome, scroll to zoom from planetary to microscopic scale, or press **`H`** for distraction-free **Cinematic Mode**.
 

@@ -7,6 +7,7 @@
 //! - Custom obsidian-glass scientific laboratory `egui` theme with live sparklines,
 //!   microscopic organism tracking, MAP-Elites discovery archive, and Cinematic Mode (`H`).
 
+use crate::convergence::crash_log;
 use crate::convergence::eco_field::{ECO_HEIGHT, ECO_WIDTH};
 use crate::convergence::engine::{toroidal_delta, ConvergenceWorld, MAX_ORGANISMS_BUFFER};
 use crate::convergence::lenia_body::{BODY_CHANNELS, BODY_RES};
@@ -99,6 +100,10 @@ struct ObservatoryApp {
     cursor_pos: (f32, f32),
     pop_history: VecDeque<f32>,
     nutr_history: VecDeque<f32>,
+    is_minimized: bool,
+    alt_held: bool,
+    metas_scratch: Vec<GpuOrganismMeta>,
+    bodies_scratch: Vec<f32>,
     start_time: Instant,
     last_fps_update: Instant,
     frame_count: u32,
@@ -130,6 +135,10 @@ impl ObservatoryApp {
             cursor_pos: (0.0, 0.0),
             pop_history: VecDeque::with_capacity(120),
             nutr_history: VecDeque::with_capacity(120),
+            is_minimized: false,
+            alt_held: false,
+            metas_scratch: Vec::with_capacity(MAX_ORGANISMS_BUFFER),
+            bodies_scratch: Vec::with_capacity(MAX_ORGANISMS_BUFFER * BODY_RES * BODY_RES * 4),
             start_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
@@ -311,6 +320,18 @@ impl ObservatoryApp {
         });
     }
 
+    fn toggle_borderless_fullscreen(&self) {
+        if let Some(win) = &self.window {
+            if win.fullscreen().is_some() {
+                win.set_fullscreen(None);
+                crash_log::log_event("exited borderless fullscreen");
+            } else {
+                win.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                crash_log::log_event("entered borderless fullscreen");
+            }
+        }
+    }
+
     fn select_organism_at_cursor(&mut self) {
         let Some(gpu) = &self.gpu else { return };
         let w = gpu.config.width.max(1) as f32;
@@ -370,7 +391,32 @@ impl ObservatoryApp {
         let Some(win) = self.window.clone() else {
             return;
         };
+        if self.is_minimized || win.is_minimized() == Some(true) {
+            return;
+        }
+        let inner = win.inner_size();
+        if inner.width == 0 || inner.height == 0 {
+            self.is_minimized = true;
+            return;
+        }
         let Some(gpu) = &mut self.gpu else { return };
+
+        // Keep GPU swapchain surface strictly synchronized with actual physical window size
+        // (prevents crashes during Windows borderless fullscreen or DPI transitions)
+        let max_dim = gpu.device.limits().max_texture_dimension_2d;
+        let target_w = inner.width.clamp(1, max_dim);
+        let target_h = inner.height.clamp(1, max_dim);
+        if gpu.config.width != target_w || gpu.config.height != target_h {
+            gpu.config.width = target_w;
+            gpu.config.height = target_h;
+            gpu.surface.configure(&gpu.device, &gpu.config);
+            crash_log::log_event(&format!(
+                "surface synchronized to {}x{} (scale={:.2})",
+                target_w,
+                target_h,
+                win.scale_factor()
+            ));
+        }
 
         let org_count = self.world.organisms.len().min(MAX_ORGANISMS_BUFFER);
         let selected_idx = self
@@ -407,10 +453,10 @@ impl ObservatoryApp {
             bytemuck::cast_slice(&self.world.eco_field.cells),
         );
 
-        let mut metas = Vec::with_capacity(org_count);
-        let mut bodies_rgba = Vec::with_capacity(org_count * BODY_RES * BODY_RES * 4);
+        self.metas_scratch.clear();
+        self.bodies_scratch.clear();
         for org in self.world.organisms.iter().take(org_count) {
-            metas.push(GpuOrganismMeta {
+            self.metas_scratch.push(GpuOrganismMeta {
                 x: org.x,
                 y: org.y,
                 radius: 0.075 + org.body.metrics.radius_norm * 0.085,
@@ -421,17 +467,23 @@ impl ObservatoryApp {
                 mass: org.body.metrics.mass,
             });
             for chunk in org.body.cells.chunks_exact(BODY_CHANNELS) {
-                bodies_rgba.push(chunk[0]);
-                bodies_rgba.push(chunk[1]);
-                bodies_rgba.push(chunk[2]);
-                bodies_rgba.push(0.0);
+                self.bodies_scratch.push(chunk[0]);
+                self.bodies_scratch.push(chunk[1]);
+                self.bodies_scratch.push(chunk[2]);
+                self.bodies_scratch.push(0.0);
             }
         }
-        if !metas.is_empty() {
-            gpu.queue
-                .write_buffer(&gpu.org_meta_buf, 0, bytemuck::cast_slice(&metas));
-            gpu.queue
-                .write_buffer(&gpu.org_bodies_buf, 0, bytemuck::cast_slice(&bodies_rgba));
+        if !self.metas_scratch.is_empty() {
+            gpu.queue.write_buffer(
+                &gpu.org_meta_buf,
+                0,
+                bytemuck::cast_slice(&self.metas_scratch),
+            );
+            gpu.queue.write_buffer(
+                &gpu.org_bodies_buf,
+                0,
+                bytemuck::cast_slice(&self.bodies_scratch),
+            );
         }
 
         let raw_input = gpu.egui_state.take_egui_input(&win);
@@ -795,7 +847,12 @@ impl ObservatoryApp {
         let frame = match gpu.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                crash_log::log_event("surface Lost/Outdated -> reconfiguring");
                 gpu.surface.configure(&gpu.device, &gpu.config);
+                return;
+            }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                crash_log::log_event("ERROR: wgpu SurfaceError::OutOfMemory");
                 return;
             }
             Err(_) => return,
@@ -846,6 +903,8 @@ impl ObservatoryApp {
         for id in &full_output.textures_delta.free {
             gpu.egui_renderer.free_texture(id);
         }
+        // Promptly reclaim completed GPU command buffers & freed textures across transitions
+        gpu.device.poll(wgpu::Maintain::Poll);
 
         if let Some(preset) = action_new_universe {
             let seed = std::time::SystemTime::now()
@@ -1010,14 +1069,25 @@ impl ApplicationHandler for ObservatoryApp {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(new_size) => {
-                if new_size.width > 0 && new_size.height > 0 {
+                if new_size.width == 0 || new_size.height == 0 {
+                    self.is_minimized = true;
+                    crash_log::log_event("window minimized (0x0)");
+                } else {
+                    self.is_minimized = false;
                     if let Some(gpu) = &mut self.gpu {
                         let max_dim = gpu.device.limits().max_texture_dimension_2d;
                         gpu.config.width = new_size.width.min(max_dim);
                         gpu.config.height = new_size.height.min(max_dim);
                         gpu.surface.configure(&gpu.device, &gpu.config);
+                        crash_log::log_event(&format!(
+                            "window resized -> {}x{}",
+                            gpu.config.width, gpu.config.height
+                        ));
                     }
                 }
+            }
+            WindowEvent::ModifiersChanged(mods) => {
+                self.alt_held = mods.state().alt_key();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = (position.x as f32, position.y as f32);
@@ -1051,17 +1121,8 @@ impl ApplicationHandler for ObservatoryApp {
                     KeyCode::Escape | KeyCode::KeyQ => event_loop.exit(),
                     KeyCode::Space => self.paused = !self.paused,
                     KeyCode::KeyH => self.cinematic_mode = !self.cinematic_mode,
-                    KeyCode::F11 => {
-                        if let Some(win) = &self.window {
-                            if win.fullscreen().is_some() {
-                                win.set_fullscreen(None);
-                            } else {
-                                win.set_fullscreen(Some(winit::window::Fullscreen::Borderless(
-                                    None,
-                                )));
-                            }
-                        }
-                    }
+                    KeyCode::F11 => self.toggle_borderless_fullscreen(),
+                    KeyCode::Enter if self.alt_held => self.toggle_borderless_fullscreen(),
                     KeyCode::ArrowLeft | KeyCode::KeyA => {
                         self.track_selected = false;
                         self.cam_x -= pan;

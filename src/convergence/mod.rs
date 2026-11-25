@@ -7,6 +7,7 @@
 //! functions are adapted with attribution from Lenia (Bert Chan, 2018, MIT)
 //! and Primordia (ShamelesAbyss).
 
+pub mod crash_log;
 pub mod eco_field;
 pub mod engine;
 pub mod experiments;
