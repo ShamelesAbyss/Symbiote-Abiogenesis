@@ -1,13 +1,13 @@
 [package]
 name = "symbiote-abiogenesis"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Symbiote: Project Abiogenesis — Convergence of continuous cellular morphology (Lenia) and adaptive artificial ecology."
+description = "Symbiote: Abiogenesis — Evolution Unbound. Multichannel continuous cellular morphogenesis, adaptive neural ecology, and GPU bioluminescent research observatory."
 
 [features]
 default = ["gpu", "observatory"]
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
-observatory = ["gpu", "dep:winit"]
+observatory = ["gpu", "dep:winit", "dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
 
 [dependencies]
 anyhow = "1"
@@ -22,3 +22,6 @@ wgpu = { version = "24", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 winit = { version = "0.30", optional = true }
+egui = { version = "0.31", optional = true }
+egui-wgpu = { version = "0.31", optional = true }
+egui-winit = { version = "0.31", optional = true }

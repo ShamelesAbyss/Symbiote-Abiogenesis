@@ -1,21 +1,16 @@
-//! Experimental validation suite for Project Convergence.
-//!
-//! Runs isolated quantitative experiments measuring:
-//! 1. Morphological stability & persistence across nutrient regimes
-//! 2. Bidirectional nutrient-morphology coupling & resource recycling
-//! 3. Multi-generation heritable variation & environmental adaptation
-//! 4. Long-duration stability, throughput, and memory footprint
+//! Experimental validation suite & automated scientific assertions for Symbiote: Abiogenesis.
 
 use crate::app::Environment;
 use crate::convergence::engine::ConvergenceWorld;
 use crate::convergence::lenia_body::{LeniaBody, LocalEnvInput, MorphGenome, BODY_CELLS};
+use crate::convergence::universes::UniversePreset;
 use crate::particle::{Genome, Tribe};
 use rand::{rngs::StdRng, SeedableRng};
 use std::time::Instant;
 
 pub fn run_all_experiments(prefer_gpu: bool) {
     println!("==================================================================");
-    println!("  SYMBIOTE: PROJECT ABIOGENESIS — CONVERGENCE VALIDATION SUITE");
+    println!("  SYMBIOTE: ABIOGENESIS — EVOLUTION UNBOUND VALIDATION SUITE");
     println!("==================================================================");
 
     experiment_1_morphological_stability();
@@ -29,7 +24,7 @@ pub fn run_all_experiments(prefer_gpu: bool) {
 }
 
 fn experiment_1_morphological_stability() {
-    println!("\n[Exp 1] Morphological Stability & Persistence (200 steps per tribe)");
+    println!("\n[Exp 1] 3-Channel Morphological Stability & Persistence (200 steps per tribe)");
     let mut rng = StdRng::seed_from_u64(0xAB10_6E4E);
     let eco = Genome {
         perception: 0.24,
@@ -42,16 +37,14 @@ fn experiment_1_morphological_stability() {
         fertility: 0.70,
     };
 
-    let tribes = [
+    for tribe in [
         Tribe::Blood,
         Tribe::Moss,
         Tribe::Deep,
         Tribe::Solar,
         Tribe::Dream,
         Tribe::Static,
-    ];
-
-    for tribe in tribes {
+    ] {
         let mg = MorphGenome::from_ecological(eco, tribe, &mut rng);
         let mut body = LeniaBody::new(&mg, 0.0, &mut rng);
         let init_mass = body.metrics.mass;
@@ -68,18 +61,19 @@ fn experiment_1_morphological_stability() {
         let mut alive_steps = 0;
         for _ in 0..200 {
             let m = body.step_cpu(&mg, env);
+            assert!(m.mass.is_finite() && m.membrane_mass.is_finite() && m.organelle_mass.is_finite());
             if m.mass > 0.015 {
                 alive_steps += 1;
             }
         }
 
         println!(
-            "  Tribe {:3} | init_mass={:.3} final_mass={:.3} mem={:.3} act={:.4} persist={}/200",
+            "  Tribe {:3} | init={:.3} final={:.3} mem={:.3} org={:.3} persist={}/200",
             tribe.name(),
             init_mass,
             body.metrics.mass,
             body.metrics.membrane_mass,
-            body.metrics.activity,
+            body.metrics.organelle_mass,
             alive_steps
         );
     }
@@ -126,55 +120,58 @@ fn experiment_2_bidirectional_coupling() {
     }
 
     println!(
-        "  Nutrient-rich  (0.90) -> mass={:.3}, membrane={:.3}, com_dx={:+.3}",
-        rich_body.metrics.mass, rich_body.metrics.membrane_mass, rich_body.metrics.com_dx
+        "  Nutrient-rich  (0.90) -> mass={:.3}, mem={:.3}, org={:.3}",
+        rich_body.metrics.mass, rich_body.metrics.membrane_mass, rich_body.metrics.organelle_mass
     );
     println!(
-        "  Nutrient-poor  (0.02) -> mass={:.3}, membrane={:.3}, com_dx={:+.3}",
-        starved_body.metrics.mass, starved_body.metrics.membrane_mass, starved_body.metrics.com_dx
+        "  Nutrient-poor  (0.02) -> mass={:.3}, mem={:.3}, org={:.3}",
+        starved_body.metrics.mass, starved_body.metrics.membrane_mass, starved_body.metrics.organelle_mass
     );
-    println!(
-        "  Coupling delta (rich - poor mass): {:+.3}",
-        rich_body.metrics.mass - starved_body.metrics.mass
+    assert!(
+        rich_body.metrics.mass > starved_body.metrics.mass,
+        "Nutrient-rich body must sustain greater mass than starved+toxin body"
     );
 }
 
 fn experiment_3_evolution_and_adaptation(prefer_gpu: bool) {
-    println!("\n[Exp 3] Multi-Generation Heritable Variation & Environmental Adaptation (600 ticks)");
-    let mut world = ConvergenceWorld::new(0xE010_7104, prefer_gpu);
+    println!("\n[Exp 3] Multi-Generation Evolution, Phylogeny & MAP-Elites Discovery (500 ticks)");
+    let mut world = ConvergenceWorld::from_universe(
+        0xE010_7104,
+        UniversePreset::EvolutionaryArena.config(),
+        prefer_gpu,
+    );
     let s0 = world.stats();
     println!(
-        "  t=  0 | orgs={:2} lineages={:2} mu={:.4} sigma={:.4} asym={:.3} nutr={:.3} backend={}",
+        "  t=  0 | orgs={:3} lineages={:2} mu={:.4} asym={:.3} nutr={:.3} backend={}",
         s0.organism_count,
         s0.active_lineages,
         s0.mean_mu,
-        s0.mean_sigma,
         s0.mean_asymmetry,
         s0.mean_nutrient,
         if s0.gpu_active { "GPU+Rayon" } else { "CPU-Rayon" }
     );
 
-    for t in 1..=600 {
+    for t in 1..=500 {
         if t == 200 {
             world.symbiote.environment = Environment::Hunger;
-        } else if t == 400 {
+        } else if t == 380 {
             world.symbiote.environment = Environment::Bloom;
         }
         world.step();
 
-        if t % 150 == 0 {
+        if t % 125 == 0 {
             let s = world.stats();
             println!(
-                "  t={:3} | orgs={:2} lineages={:2} births={:3} deaths={:3} max_gen={:2} mu={:.4} asym={:.3} nutr={:.3} env={}",
+                "  t={:3} | orgs={:3} lin={:2} births={:3} deaths={:3} pred={:4} gen={:2} archive={:2}/36 mu={:.4} env={}",
                 s.tick,
                 s.organism_count,
                 s.active_lineages,
                 s.total_births,
                 s.total_deaths,
+                s.total_predations,
                 s.max_generation,
+                s.archive_discoveries,
                 s.mean_mu,
-                s.mean_asymmetry,
-                s.mean_nutrient,
                 world.symbiote.environment.name()
             );
         }
@@ -202,4 +199,70 @@ fn experiment_4_performance_and_memory(prefer_gpu: bool) {
         total_kb,
         if world.use_gpu { "GPU-Compute + Rayon" } else { "CPU-Rayon" }
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::convergence::persistence::{load_world, save_world_atomic};
+
+    #[test]
+    fn test_numerical_stability_and_damage_accounting() {
+        let mut rng = StdRng::seed_from_u64(42);
+        let eco = Genome {
+            perception: 0.25,
+            hunger: 0.025,
+            bonding: 0.8,
+            volatility: 1.0,
+            orbit: 0.5,
+            membrane: 0.7,
+            metabolism: 0.04,
+            fertility: 0.7,
+        };
+        let mg = MorphGenome::from_ecological(eco, Tribe::Deep, &mut rng);
+        let mut body = LeniaBody::new(&mg, 0.0, &mut rng);
+        let before = body.metrics.mass;
+        let lost = body.apply_damage(0.35);
+        assert!(lost > 0.0 && body.metrics.mass < before);
+        assert!(body.cells.iter().all(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0));
+    }
+
+    #[test]
+    fn test_mutation_bounds_and_crossover() {
+        let mut rng = StdRng::seed_from_u64(99);
+        let eco = Genome {
+            perception: 0.2,
+            hunger: 0.02,
+            bonding: 0.7,
+            volatility: 0.9,
+            orbit: 0.4,
+            membrane: 0.6,
+            metabolism: 0.03,
+            fertility: 0.6,
+        };
+        let a = MorphGenome::from_ecological(eco, Tribe::Blood, &mut rng);
+        let b = MorphGenome::from_ecological(eco, Tribe::Solar, &mut rng);
+        let child = a.crossover(&b, &mut rng).mutate(&mut rng, 0.2);
+        assert!((0.09..=0.30).contains(&child.mu));
+        assert!((0.018..=0.085).contains(&child.sigma));
+        assert!((3..=7).contains(&child.kernel_radius));
+    }
+
+    #[test]
+    fn test_atomic_persistence_roundtrip() {
+        let mut world = ConvergenceWorld::from_universe(
+            1337,
+            UniversePreset::Genesis.config(),
+            false,
+        );
+        for _ in 0..10 {
+            world.step();
+        }
+        let path = save_world_atomic(&world, "unit_test_world").expect("save failed");
+        let restored = load_world(&path, false).expect("load failed");
+        assert_eq!(restored.tick, world.tick);
+        assert_eq!(restored.organisms.len(), world.organisms.len());
+        assert_eq!(restored.universe.preset, UniversePreset::Genesis);
+        let _ = std::fs::remove_file(path);
+    }
 }

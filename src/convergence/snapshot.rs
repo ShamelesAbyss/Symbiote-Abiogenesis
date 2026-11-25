@@ -1,7 +1,6 @@
-//! Headless high-resolution PNG screenshot renderer for Symbiote: Project Abiogenesis.
+//! Headless high-resolution PNG screenshot renderer for Symbiote: Abiogenesis.
 //!
-//! Uses the exact same bioluminescent shading equations as `OBSERVATORY_WGSL`
-//! so documentation screenshots and CI visual checks reflect the real simulation.
+//! Mirrors the 3-channel fluorescence-microscopy bioluminescent shading of `OBSERVATORY_WGSL`.
 
 use crate::convergence::eco_field::{ECO_CHANNELS, ECO_HEIGHT, ECO_WIDTH};
 use crate::convergence::engine::ConvergenceWorld;
@@ -30,7 +29,6 @@ pub fn capture_showcase_screenshots(prefer_gpu: bool) -> Result<()> {
         Path::new("assets/screenshots/ecosystem_overview.png"),
     )?;
 
-    // Center microscopic zoom on the highest-energy thriving organism
     let (fx, fy) = world
         .organisms
         .iter()
@@ -76,12 +74,12 @@ pub fn render_png(
             let ndc_x = (u - 0.5) * 2.0;
             let wx = center_x + (ndc_x * aspect) / zoom;
 
-            let mut col = [0.012f32, 0.018, 0.032];
+            let mut col = [0.008f32, 0.014, 0.026];
             if wx.abs() <= 1.0 && wy.abs() <= 1.0 {
                 let e = sample_eco_bilinear(&world.eco_field.cells, wx, wy);
-                col[0] += 0.03 * e[0] + 0.14 * e[1] + 0.32 * e[2] + 0.10 * e[3].powf(1.3);
-                col[1] += 0.16 * e[0] + 0.06 * e[1] + 0.05 * e[2] + 0.34 * e[3].powf(1.3);
-                col[2] += 0.18 * e[0] + 0.24 * e[1] + 0.08 * e[2] + 0.68 * e[3].powf(1.3);
+                col[0] += 0.02 * e[0] + 0.14 * e[1] + 0.36 * e[2] + 0.08 * e[3].powf(1.3);
+                col[1] += 0.14 * e[0] + 0.06 * e[1] + 0.05 * e[2] + 0.34 * e[3].powf(1.3);
+                col[2] += 0.17 * e[0] + 0.26 * e[1] + 0.09 * e[2] + 0.72 * e[3].powf(1.3);
             }
 
             for org in &world.organisms {
@@ -93,23 +91,31 @@ pub fn render_png(
                 }
                 let lu = (dx / radius) * 0.5 + 0.5;
                 let lv = (dy / radius) * 0.5 + 0.5;
-                let (cyto, mem) = sample_body_bilinear(&org.body.cells, lu, lv);
-                if cyto > 0.01 || mem > 0.01 {
-                    let energy_norm = (org.energy / 100.0).clamp(0.1, 1.4);
+                let (cyto, mem, organ) = sample_body_bilinear(&org.body.cells, lu, lv);
+                if cyto > 0.01 || mem > 0.01 || organ > 0.01 {
+                    let energy_norm = (org.energy / 100.0).clamp(0.15, 1.35);
                     let breath = 0.88 + 0.12 * org.body.pulse_phase.sin();
-                    let core_rgb = hsv_to_rgb(org.morph_genome.biolum_hue, 0.72, 0.95 * breath * energy_norm);
-                    let mem_rgb = hsv_to_rgb((org.morph_genome.biolum_hue + 0.14).fract(), 0.45, 1.25);
+                    let core_rgb = hsv_to_rgb(org.morph_genome.biolum_hue, 0.72, 0.90 * breath * energy_norm);
+                    let mem_rgb = hsv_to_rgb((org.morph_genome.biolum_hue + 0.12).fract(), 0.42, 1.30);
+                    let org_rgb = hsv_to_rgb(
+                        (org.morph_genome.biolum_hue + org.morph_genome.accent_shift).fract(),
+                        0.85,
+                        1.45,
+                    );
 
-                    let alpha = (cyto * 0.92).clamp(0.0, 0.95);
+                    let alpha = (cyto * 0.90).clamp(0.0, 0.94);
                     for c in 0..3 {
-                        let c_val = core_rgb[c] * (0.45 + 0.85 * cyto);
-                        col[c] = col[c] * (1.0 - alpha) + c_val * alpha + mem_rgb[c] * mem * 0.65;
+                        let c_val = core_rgb[c] * (0.40 + 0.85 * cyto);
+                        col[c] = col[c] * (1.0 - alpha)
+                            + c_val * alpha
+                            + mem_rgb[c] * mem * 0.72
+                            + org_rgb[c] * organ * 0.95;
                     }
                 }
             }
 
             for c in 0..3 {
-                let mapped = (col[c] / (1.0 + col[c] * 0.35)).powf(0.92).clamp(0.0, 1.0);
+                let mapped = (col[c] / (1.0 + col[c] * 0.32)).powf(0.92).clamp(0.0, 1.0);
                 row[px * 3 + c] = (mapped * 255.0) as u8;
             }
         }
@@ -148,7 +154,7 @@ fn sample_eco_bilinear(cells: &[f32], wx: f32, wy: f32) -> [f32; 4] {
     out
 }
 
-fn sample_body_bilinear(cells: &[f32], lu: f32, lv: f32) -> (f32, f32) {
+fn sample_body_bilinear(cells: &[f32], lu: f32, lv: f32) -> (f32, f32, f32) {
     let u = lu.clamp(0.0, 0.999) * (BODY_RES - 1) as f32;
     let v = lv.clamp(0.0, 0.999) * (BODY_RES - 1) as f32;
     let x0 = u.floor() as usize;
@@ -163,11 +169,13 @@ fn sample_body_bilinear(cells: &[f32], lu: f32, lv: f32) -> (f32, f32) {
     let b01 = (y1 * BODY_RES + x0) * BODY_CHANNELS;
     let b11 = (y1 * BODY_RES + x1) * BODY_CHANNELS;
 
-    let c_top = cells[b00] * (1.0 - fx) + cells[b10] * fx;
-    let c_bot = cells[b01] * (1.0 - fx) + cells[b11] * fx;
-    let m_top = cells[b00 + 1] * (1.0 - fx) + cells[b10 + 1] * fx;
-    let m_bot = cells[b01 + 1] * (1.0 - fx) + cells[b11 + 1] * fx;
-    (c_top * (1.0 - fy) + c_bot * fy, m_top * (1.0 - fy) + m_bot * fy)
+    let mut out = [0.0f32; 3];
+    for c in 0..3 {
+        let top = cells[b00 + c] * (1.0 - fx) + cells[b10 + c] * fx;
+        let bot = cells[b01 + c] * (1.0 - fx) + cells[b11 + c] * fx;
+        out[c] = top * (1.0 - fy) + bot * fy;
+    }
+    (out[0], out[1], out[2])
 }
 
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {

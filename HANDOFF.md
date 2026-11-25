@@ -1,23 +1,26 @@
 # HANDOFF.md — Project State & Continuation Notes
 
-## Current Status (v0.1.0)
+## Current Status (v0.2.0 — Evolution Unbound)
 - **Repository**: `https://github.com/ShamelesAbyss/Symbiote-Abiogenesis` (`main` branch)
 - **Originals Preserved**: Both `Symbiote` and `Primordia` remain unmodified upstream references.
-- **Validated Backends**:
-  - `GPU-Compute + Rayon` (`wgpu` 24 + `ECO_FIELD_WGSL`): ~193 ticks/sec @ 96 organisms
-  - `CPU-Rayon` (`--cpu`): ~159 ticks/sec @ 96 organisms
-  - Pure CPU (`--no-default-features`): compiles cleanly with zero GPU/windowing dependencies
+- **Default Entrypoint**: Double-clicking `symbiote-abiogenesis.exe` launches the native `winit` + `wgpu` + `egui` **Abiogenesis Research Laboratory** (`--legacy-tui` for classic Symbiote terminal mode).
+- **Validated Backends & Tests**:
+  - `cargo test --no-default-features`: 3/3 automated assertions passing
+  - `GPU-Compute + Rayon` (`--experiment`): **184.8 ticks/sec** with 3-channel Lenia + `NeuralBrain` + Spatial Hashing + `EcoField` WGSL compute
+  - Live Windows executable verified running (`Title='SYMBIOTE: ABIOGENESIS — EVOLUTION UNBOUND'`)
 
-## Key Entry Points
-- `src/main.rs`: CLI dispatch (`--observatory`, `--experiment`, `--snapshot`, `--cpu`, or default TUI)
-- `src/convergence/lenia_body.rs`: Localized `24x24x2` continuous Lenia bodies & `MorphGenome`
-- `src/convergence/eco_field.rs`: `128x128x4` continuous reaction-diffusion ecological field
-- `src/convergence/engine.rs`: Unified 6-scale `ConvergenceWorld`
-- `src/convergence/gpu_compute.rs`: `wgpu` 24 compute pipeline for `EcoField`
-- `src/convergence/observatory.rs`: Interactive `winit` + `wgpu` graphical observatory
-- `src/convergence/snapshot.rs`: Headless `1280x720` PNG screenshot renderer
+## Key Modules (`src/convergence/`)
+- `lenia_body.rs`: 3-channel `24×24×3` Lenia bodies, `MorphGenome`, `NeuralBrain`
+- `eco_field.rs`: `128×128×4` continuous reaction-diffusion ecological field
+- `engine.rs`: Unified 6-scale `ConvergenceWorld` with $O(N)$ spatial hashing & coherent resource accounting
+- `universes.rs`: 8 Experimental Universes + configurable permanent extinction
+- `phylogeny.rs`: Evolutionary lineage tracker + `6×6` MAP-Elites Discovery Archive
+- `persistence.rs`: Versioned atomic world save/load (`saves/worlds/*.abio.json`)
+- `gpu_compute.rs`: `wgpu` 24 WGSL compute pipeline for `EcoField`
+- `observatory.rs`: Native `egui` + `wgpu` Research Laboratory & 3-channel fluorescence shader
+- `snapshot.rs`: Headless `1280×720` PNG screenshot renderer
 
-## Recommended Next Steps
-1. Move `LeniaBody::step_cpu` into a batched WGSL compute shader in `gpu_compute.rs` so both `EcoField` and all `LeniaBody` instances remain GPU-resident with zero per-frame readback in `--observatory` mode.
-2. Add spatial hashing in `ConvergenceWorld::step` to scale `MAX_ORGANISMS` from 96 to 512+.
-3. Add interactive click-to-inspect organism HUD in `observatory.rs`.
+## Recommended Next Steps (v0.3.0)
+1. Move `LeniaBody::step_cpu` into a batched WGSL compute shader so both `EcoField` and all `LeniaBody` instances remain GPU-resident with zero per-frame readback.
+2. Add an interactive graphical Evolutionary Tree of Life canvas inside `observatory.rs` to browse ancestral lineages and resurrect archived MAP-Elites organisms into the live world.
+3. Add multi-cellular colony adhesion bonds and sexual crossover on compatible organism contact.

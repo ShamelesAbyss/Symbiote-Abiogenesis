@@ -1,4 +1,4 @@
-//! SYMBIOTE: PROJECT ABIOGENESIS — CONVERGENCE
+//! SYMBIOTE: ABIOGENESIS — EVOLUTION UNBOUND
 //!
 //! Unifies Primordia's continuous cellular automata (Lenia) with Symbiote's
 //! evolutionary particle chemistry, ecological fields, and species lineages.
@@ -15,4 +15,7 @@ pub mod gpu_compute;
 pub mod lenia_body;
 #[cfg(feature = "observatory")]
 pub mod observatory;
+pub mod persistence;
+pub mod phylogeny;
 pub mod snapshot;
+pub mod universes;

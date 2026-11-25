@@ -41,19 +41,14 @@ fn main() -> Result<()> {
         return convergence::snapshot::capture_showcase_screenshots(!force_cpu);
     }
 
-    if args.iter().any(|a| a == "--observatory" || a == "--gpu") {
+    if !args.iter().any(|a| a == "--legacy-tui") {
         #[cfg(feature = "observatory")]
         {
             return convergence::observatory::run_observatory(!force_cpu);
         }
-        #[cfg(not(feature = "observatory"))]
-        {
-            eprintln!("Observatory feature not enabled. Rebuild with default features (--features observatory).");
-            return Ok(());
-        }
     }
 
-    // Default: preserve the original functional Symbiote TUI simulation
+    // Legacy Symbiote terminal simulation (--legacy-tui, or default when built with --no-default-features)
     let _ = pattern::bootstrap_pattern_layer(0);
 
     enable_raw_mode()?;
