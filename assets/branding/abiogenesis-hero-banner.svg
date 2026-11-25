@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="SYMBIOTE: ABIOGENESIS — Life without biology. Evolution without boundaries.">
+  <defs>
+    <radialGradient id="bg-abyss" cx="50%" cy="48%" r="72%">
+      <stop offset="0%" stop-color="#0A202E"/>
+      <stop offset="52%" stop-color="#07121C"/>
+      <stop offset="100%" stop-color="#050810"/>
+    </radialGradient>
+
+    <radialGradient id="glow-cyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38F9D7" stop-opacity="0.34"/>
+      <stop offset="55%" stop-color="#38F9D7" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#38F9D7" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glow-amethyst" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.32"/>
+      <stop offset="55%" stop-color="#F472B6" stop-opacity="0.09"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glow-emerald" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34D399" stop-opacity="0.28"/>
+      <stop offset="60%" stop-color="#38F9D7" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#34D399" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="title-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="48%" stop-color="#38F9D7"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+
+    <linearGradient id="mem-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38F9D7" stop-opacity="0.85"/>
+      <stop offset="50%" stop-color="#38BDF8" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.80"/>
+    </linearGradient>
+
+    <linearGradient id="mem-magenta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F472B6" stop-opacity="0.82"/>
+      <stop offset="50%" stop-color="#A78BFA" stop-opacity="0.50"/>
+      <stop offset="100%" stop-color="#FBBF24" stop-opacity="0.72"/>
+    </linearGradient>
+
+    <linearGradient id="fil-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#34D399" stop-opacity="0.0"/>
+      <stop offset="40%" stop-color="#34D399" stop-opacity="0.55"/>
+      <stop offset="75%" stop-color="#38F9D7" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.0"/>
+    </linearGradient>
+
+    <filter id="soft-blur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <filter id="micro-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base Abyssal Canvas -->
+  <rect width="1280" height="400" rx="14" fill="url(#bg-abyss)"/>
+  <rect x="0.75" y="0.75" width="1278.5" height="398.5" rx="13.5" fill="none" stroke="#38F9D7" stroke-opacity="0.16" stroke-width="1.2"/>
+
+  <!-- Subtle Scientific Coordinate Reticle -->
+  <g stroke="#38F9D7" stroke-opacity="0.045" stroke-width="1">
+    <line x1="0" y1="100" x2="1280" y2="100"/>
+    <line x1="0" y1="200" x2="1280" y2="200"/>
+    <line x1="0" y1="300" x2="1280" y2="300"/>
+    <line x1="320" y1="0" x2="320" y2="400"/>
+    <line x1="640" y1="0" x2="640" y2="400"/>
+    <line x1="960" y1="0" x2="960" y2="400"/>
+  </g>
+
+  <!-- Flowing Reaction-Diffusion Chemical Field Contours -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M-20,315 C180,260 310,360 540,305 C760,252 940,348 1300,275" stroke="url(#fil-emerald)" stroke-width="1.5" opacity="0.65"/>
+    <path d="M-20,85 C210,130 390,45 640,95 C890,145 1070,60 1300,112" stroke="url(#fil-emerald)" stroke-width="1.2" opacity="0.45"/>
+    <path d="M-20,230 C240,185 420,275 680,210 C920,150 1090,240 1300,195" stroke="#A78BFA" stroke-opacity="0.14" stroke-width="1.2"/>
+  </g>
+
+  <!-- Ambient Bioluminescent Halos -->
+  <circle cx="195" cy="200" r="165" fill="url(#glow-cyan)"/>
+  <circle cx="1085" cy="198" r="170" fill="url(#glow-amethyst)"/>
+  <circle cx="640" cy="200" r="210" fill="url(#glow-emerald)" opacity="0.45"/>
+
+  <!-- LEFT SPECIMEN: Continuous Multi-Lobed Bioluminescent Medusoid Organism -->
+  <g transform="translate(190, 198)">
+    <!-- Undulating Trailing Tendrils -->
+    <g fill="none" stroke-linecap="round" filter="url(#micro-glow)">
+      <path d="M-28,44 C-46,85 -18,118 -42,158" stroke="#38F9D7" stroke-opacity="0.55" stroke-width="2.2"/>
+      <path d="M-8,52 C-16,96 14,126 -6,168" stroke="#38BDF8" stroke-opacity="0.65" stroke-width="2.5"/>
+      <path d="M16,48 C34,92 6,128 28,162" stroke="#A78BFA" stroke-opacity="0.58" stroke-width="2.0"/>
+      <path d="M36,36 C64,74 44,108 68,140" stroke="#34D399" stroke-opacity="0.42" stroke-width="1.5"/>
+    </g>
+    <!-- Outer Translucent Membrane Silhouette -->
+    <path d="M0,-96 C54,-92 98,-50 92,4 C87,44 54,66 12,62 C-28,58 -68,72 -88,32 C-108,-8 -82,-76 -34,-92 C-22,-96 -10,-97 0,-96 Z"
+          fill="#0C3547" fill-opacity="0.55" stroke="url(#mem-cyan)" stroke-width="2.6" filter="url(#micro-glow)"/>
+    <!-- Secondary Cytoplasmic Ring -->
+    <path d="M-2,-68 C38,-65 68,-34 64,4 C60,34 34,46 6,42 C-24,38 -52,44 -64,18 C-76,-10 -56,-54 -22,-65 Z"
+          fill="#38F9D7" fill-opacity="0.16" stroke="#38F9D7" stroke-opacity="0.55" stroke-width="1.4"/>
+    <!-- Internal Differentiated Organelles (Ch2) -->
+    <ellipse cx="-16" cy="-14" rx="22" ry="15" transform="rotate(-24 -16 -14)" fill="#F472B6" fill-opacity="0.34" stroke="#F472B6" stroke-opacity="0.85" stroke-width="1.3" filter="url(#micro-glow)"/>
+    <ellipse cx="22" cy="8" rx="16" ry="11" transform="rotate(18 22 8)" fill="#A78BFA" fill-opacity="0.36" stroke="#A78BFA" stroke-opacity="0.85" stroke-width="1.2" filter="url(#micro-glow)"/>
+    <circle cx="-6" cy="-10" r="6" fill="#38F9D7" fill-opacity="0.90" filter="url(#micro-glow)"/>
+    <circle cx="24" cy="10" r="4" fill="#FBBF24" fill-opacity="0.85"/>
+    <!-- Lenia Kernel Sampling Arc Overlay -->
+    <circle cx="0" cy="-8" r="112" fill="none" stroke="#38F9D7" stroke-opacity="0.18" stroke-width="1" stroke-dasharray="4 7"/>
+  </g>
+
+  <!-- RIGHT SPECIMEN: Spiral Stellate Colony & Branching Phylogenetic Filaments -->
+  <g transform="translate(1088, 198)">
+    <!-- Phylogenetic Lineage Branches -->
+    <g fill="none" stroke-linecap="round">
+      <path d="M-118,86 C-82,62 -64,34 -34,12" stroke="#34D399" stroke-opacity="0.55" stroke-width="1.6"/>
+      <path d="M-82,62 C-66,86 -44,108 -18,118" stroke="#FBBF24" stroke-opacity="0.48" stroke-width="1.4"/>
+      <path d="M40,-24 C74,-52 96,-88 122,-112" stroke="#A78BFA" stroke-opacity="0.52" stroke-width="1.5"/>
+      <path d="M58,28 C90,46 112,78 134,106" stroke="#F472B6" stroke-opacity="0.48" stroke-width="1.4"/>
+    </g>
+    <!-- 5-Lobed Organic Stellate Cellular Body -->
+    <path d="M0,-92 C24,-92 22,-42 46,-34 C70,-26 102,-46 108,-22 C114,2 64,14 62,38 C60,62 84,96 60,104 C36,112 18,64 -6,66 C-30,68 -48,108 -72,96 C-96,84 -58,46 -64,22 C-70,-2 -108,-18 -96,-42 C-84,-66 -42,-36 -24,-50 C-6,-64 -24,-92 0,-92 Z"
+          fill="#221438" fill-opacity="0.62" stroke="url(#mem-magenta)" stroke-width="2.4" filter="url(#micro-glow)"/>
+    <!-- Inner Spiral Cytoplasm -->
+    <path d="M0,-52 C30,-48 52,-20 48,12 C44,42 16,58 -14,52 C-42,46 -56,18 -48,-12 C-40,-40 -18,-54 0,-52 Z"
+          fill="#A78BFA" fill-opacity="0.20" stroke="#F472B6" stroke-opacity="0.60" stroke-width="1.4"/>
+    <!-- Luminous Organelle Nodes -->
+    <circle cx="0" cy="0" r="15" fill="#F472B6" fill-opacity="0.38" stroke="#FBBF24" stroke-opacity="0.90" stroke-width="1.4" filter="url(#micro-glow)"/>
+    <circle cx="0" cy="0" r="5.5" fill="#E2E8F0" fill-opacity="0.95"/>
+    <circle cx="48" cy="-16" r="4.5" fill="#38F9D7" fill-opacity="0.88"/>
+    <circle cx="-42" cy="-20" r="4" fill="#34D399" fill-opacity="0.88"/>
+    <circle cx="28" cy="48" r="4" fill="#FBBF24" fill-opacity="0.88"/>
+    <circle cx="-38" cy="44" r="3.8" fill="#A78BFA" fill-opacity="0.88"/>
+    <!-- Lineage Nodes -->
+    <circle cx="-118" cy="86" r="3.5" fill="#34D399"/>
+    <circle cx="-82" cy="62" r="3.2" fill="#38F9D7"/>
+    <circle cx="-18" cy="118" r="3.2" fill="#FBBF24"/>
+  </g>
+
+  <!-- Marine Snow Bokeh Specks -->
+  <g fill="#E2E8F0">
+    <circle cx="370" cy="72" r="1.4" opacity="0.45"/>
+    <circle cx="425" cy="318" r="1.8" opacity="0.35"/>
+    <circle cx="845" cy="82" r="1.6" opacity="0.42"/>
+    <circle cx="910" cy="328" r="1.3" opacity="0.38"/>
+    <circle cx="515" cy="54" r="1.1" opacity="0.30"/>
+    <circle cx="775" cy="348" r="1.5" opacity="0.34"/>
+    <circle cx="290" cy="128" r="1.2" opacity="0.40"/>
+    <circle cx="965" cy="136" r="1.3" opacity="0.40"/>
+  </g>
+
+  <!-- CENTER TYPOGRAPHY -->
+  <g text-anchor="middle" font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Inter', Helvetica, Arial, sans-serif">
+    <!-- Eyebrow Pill -->
+    <rect x="444" y="96" width="392" height="24" rx="12" fill="#0B1D2C" fill-opacity="0.85" stroke="#38F9D7" stroke-opacity="0.30" stroke-width="1"/>
+    <text x="640" y="112" font-size="10.5" font-weight="600" letter-spacing="3.2" fill="#38F9D7">PROJECT EXOBIOLOGY · ARTIFICIAL BIOSPHERE</text>
+
+    <!-- Primary Title -->
+    <text x="640" y="182" font-size="56" font-weight="800" letter-spacing="7" fill="url(#title-grad)" filter="url(#micro-glow)">ABIOGENESIS</text>
+    <text x="640" y="213" font-size="14" font-weight="600" letter-spacing="9.5" fill="#94A3B8">SYMBIOTE COMPUTATIONAL BIOLOGY LAB</text>
+
+    <!-- Hairline Separator -->
+    <line x1="470" y1="234" x2="810" y2="234" stroke="url(#fil-emerald)" stroke-width="1.3"/>
+
+    <!-- Tagline -->
+    <text x="640" y="266" font-size="19" font-weight="500" letter-spacing="0.8" fill="#E2E8F0">Life without biology. Evolution without boundaries.</text>
+
+    <!-- Technical Telemetry Strip -->
+    <text x="640" y="302" font-size="11.5" font-weight="500" letter-spacing="1.4" fill="#7DD3FC" fill-opacity="0.82">
+      40×40×3 MULTICHANNEL LENIA  ·  NEURALBRAIN  ·  TOROIDAL REACTION-DIFFUSION  ·  WGPU / WGSL
+    </text>
+  </g>
+</svg>

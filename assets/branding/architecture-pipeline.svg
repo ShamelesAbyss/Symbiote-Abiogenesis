@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-label="Symbiote: Abiogenesis Hybrid CPU-Rayon and WGPU-WGSL Computational Architecture">
+  <defs>
+    <linearGradient id="arch-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050810"/>
+      <stop offset="50%" stop-color="#081622"/>
+      <stop offset="100%" stop-color="#050810"/>
+    </linearGradient>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38F9D7"/>
+    </marker>
+    <marker id="arrow-amethyst" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#A78BFA"/>
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#34D399"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="420" rx="12" fill="url(#arch-bg)" stroke="#38F9D7" stroke-opacity="0.18" stroke-width="1.2"/>
+
+  <!-- Header -->
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <text x="36" y="38" font-size="13" font-weight="700" letter-spacing="2.8" fill="#38F9D7">HYBRID MULTISCALE COMPUTATIONAL ARCHITECTURE</text>
+    <text x="1164" y="38" text-anchor="end" font-size="11" fill="#94A3B8">Verified v0.3.0 Runtime Execution Boundaries (CPU+Rayon vs. GPU WGSL)</text>
+    <line x1="36" y1="50" x2="1164" y2="50" stroke="#38F9D7" stroke-opacity="0.16" stroke-width="1"/>
+  </g>
+
+  <!-- COLUMN 1: CPU + RAYON ORGANISM DOMAIN -->
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <rect x="36" y="70" width="380" height="316" rx="10" fill="#0A1424" fill-opacity="0.9" stroke="#38F9D7" stroke-opacity="0.35" stroke-width="1.2"/>
+    <text x="56" y="96" font-size="11.5" font-weight="700" letter-spacing="2" fill="#38F9D7">CPU · RAYON PARALLEL ENGINE</text>
+
+    <!-- Box: Morphogenesis -->
+    <rect x="54" y="112" width="344" height="68" rx="7" fill="#0E2030" stroke="#38F9D7" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="68" y="134" font-size="13" font-weight="700" fill="#E2E8F0">Localized 40×40×3 Lenia Bodies</text>
+    <text x="68" y="152" font-size="11" fill="#94A3B8">Ch0 Cytoplasm · Ch1 Membrane · Ch2 Organelles</text>
+    <text x="68" y="168" font-size="10.5" fill="#38F9D7">9-tap Gaussian smoothing · Anisotropic spiral kernels</text>
+
+    <!-- Box: NeuralBrain -->
+    <rect x="54" y="192" width="344" height="58" rx="7" fill="#17132D" stroke="#A78BFA" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="68" y="214" font-size="13" font-weight="700" fill="#E2E8F0">Heritable NeuralBrain (6 → 6 → 3 RNN)</text>
+    <text x="68" y="232" font-size="11" fill="#C4B5FD">Gradient sensing · Locomotion thrust · Chemical secretion</text>
+
+    <!-- Box: Spatial Hash & Ecology -->
+    <rect x="54" y="262" width="344" height="52" rx="7" fill="#0C221E" stroke="#34D399" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="68" y="284" font-size="13" font-weight="700" fill="#E2E8F0">O(N) Toroidal Spatial Hash &amp; Selection</text>
+    <text x="68" y="302" font-size="11" fill="#6EE7B7">Physical damage predation · Zero-sum symbiosis · Mitosis</text>
+
+    <!-- Box: Phylogeny & Persistence -->
+    <rect x="54" y="326" width="344" height="46" rx="7" fill="#231226" stroke="#F472B6" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="68" y="346" font-size="12.5" font-weight="700" fill="#E2E8F0">Phylogeny · 6×6 MAP-Elites · Atomic Saves</text>
+    <text x="68" y="362" font-size="10.5" fill="#F9A8D4">Lineage history · Extinction tracking · saves/worlds/*.abio.json</text>
+  </g>
+
+  <!-- COLUMN 2: GPU COMPUTE DOMAIN -->
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <rect x="466" y="70" width="318" height="316" rx="10" fill="#0B1822" fill-opacity="0.9" stroke="#34D399" stroke-opacity="0.35" stroke-width="1.2"/>
+    <text x="486" y="96" font-size="11.5" font-weight="700" letter-spacing="2" fill="#34D399">GPU · WGSL COMPUTE (+ CPU FALLBACK)</text>
+
+    <rect x="484" y="116" width="282" height="114" rx="7" fill="#0E2528" stroke="#34D399" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="498" y="140" font-size="13.5" font-weight="700" fill="#E2E8F0">Toroidal EcoField (128×128×4)</text>
+    <text x="498" y="160" font-size="11" fill="#6EE7B7">• Ch0: Hydrothermal Nutrient Plumes</text>
+    <text x="498" y="177" font-size="11" fill="#C4B5FD">• Ch1: Organism Pheromone Signals</text>
+    <text x="498" y="194" font-size="11" fill="#FDA4AF">• Ch2: Predation &amp; Stress Toxins</text>
+    <text x="498" y="211" font-size="11" fill="#7DD3FC">• Ch3: Sinuous Mycelial Filaments</text>
+
+    <rect x="484" y="248" width="282" height="64" rx="7" fill="#1D190C" stroke="#FBBF24" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="498" y="270" font-size="12.5" font-weight="700" fill="#E2E8F0">8 Experimental Universes</text>
+    <text x="498" y="288" font-size="10.5" fill="#FDE68A">Configurable regeneration, mutation,</text>
+    <text x="498" y="302" font-size="10.5" fill="#FDE68A">catastrophes &amp; permanent extinction</text>
+
+    <rect x="484" y="326" width="282" height="46" rx="7" fill="#0D1E2E" stroke="#38BDF8" stroke-opacity="0.4" stroke-width="1"/>
+    <text x="498" y="346" font-size="12" font-weight="700" fill="#E2E8F0">Symbiote Core Substrate Coupling</text>
+    <text x="498" y="362" font-size="10.5" fill="#93C5FD">Particle chemistry · RuleMatrix · Ecology zones</text>
+  </g>
+
+  <!-- COLUMN 3: GPU VISUALIZATION & OBSERVATORY -->
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <rect x="834" y="70" width="330" height="316" rx="10" fill="#0B1326" fill-opacity="0.9" stroke="#A78BFA" stroke-opacity="0.38" stroke-width="1.2"/>
+    <text x="854" y="96" font-size="11.5" font-weight="700" letter-spacing="2" fill="#A78BFA">WGPU 24 · OBSERVATORY &amp; UI</text>
+
+    <rect x="852" y="116" width="294" height="114" rx="7" fill="#141832" stroke="#38BDF8" stroke-opacity="0.5" stroke-width="1.2"/>
+    <text x="866" y="140" font-size="13.5" font-weight="700" fill="#E2E8F0">Bioluminescence Fragment Shader</text>
+    <text x="866" y="160" font-size="11" fill="#BAE6FD">• Hermite-smoothed 40×40×3 bodies</text>
+    <text x="866" y="177" font-size="11" fill="#BAE6FD">• Translucent membranes &amp; organelles</text>
+    <text x="866" y="194" font-size="11" fill="#BAE6FD">• ACES filmic tone mapping &amp; halo</text>
+    <text x="866" y="211" font-size="11" fill="#BAE6FD">• Seamless toroidal zoom (0.7×–18×)</text>
+
+    <rect x="852" y="248" width="294" height="124" rx="7" fill="#121828" stroke="#A78BFA" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="866" y="270" font-size="13" font-weight="700" fill="#E2E8F0">Obsidian-Glass egui 0.31 Lab</text>
+    <text x="866" y="290" font-size="11" fill="#DDD6FE">• Click-to-inspect microscopic tracking</text>
+    <text x="866" y="307" font-size="11" fill="#DDD6FE">• Live population &amp; nutrient sparklines</text>
+    <text x="866" y="324" font-size="11" fill="#DDD6FE">• Universe generator &amp; atomic save/load</text>
+    <text x="866" y="341" font-size="11" fill="#DDD6FE">• Distraction-free Cinematic Mode (H)</text>
+    <text x="866" y="358" font-size="10.5" fill="#94A3B8">Headless PNG parity via --snapshot</text>
+  </g>
+
+  <!-- Bidirectional Coupling Arrows -->
+  <g fill="none" stroke-width="2">
+    <path d="M416,158 L462,158" stroke="#38F9D7" marker-end="url(#arrow-cyan)"/>
+    <path d="M462,184 L416,184" stroke="#34D399" marker-end="url(#arrow-emerald)"/>
+    <path d="M784,172 L830,172" stroke="#A78BFA" marker-end="url(#arrow-amethyst)"/>
+    <path d="M416,290 C442,290 442,280 462,280" stroke="#34D399" marker-end="url(#arrow-emerald)"/>
+  </g>
+</svg>

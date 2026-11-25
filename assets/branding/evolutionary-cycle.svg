@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" role="img" aria-label="Bidirectional Evolutionary and Ecological Selection Cycle">
+  <defs>
+    <linearGradient id="cyc-bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#050810"/>
+      <stop offset="50%" stop-color="#081923"/>
+      <stop offset="100%" stop-color="#050810"/>
+    </linearGradient>
+    <marker id="arr-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38F9D7"/>
+    </marker>
+    <marker id="arr-m" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#F472B6"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="260" rx="12" fill="url(#cyc-bg)" stroke="#A78BFA" stroke-opacity="0.22" stroke-width="1.2"/>
+
+  <g font-family="'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <text x="36" y="34" font-size="12.5" font-weight="700" letter-spacing="2.6" fill="#A78BFA">BIDIRECTIONAL EVOLUTIONARY &amp; ECOLOGICAL CYCLE</text>
+    <line x1="36" y1="45" x2="1164" y2="45" stroke="#A78BFA" stroke-opacity="0.16" stroke-width="1"/>
+
+    <!-- Step 1 -->
+    <rect x="36" y="72" width="196" height="106" rx="9" fill="#0B1E2C" stroke="#38F9D7" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="52" y="98" font-size="11" font-weight="700" letter-spacing="1.4" fill="#38F9D7">01 · GENOME</text>
+    <text x="52" y="120" font-size="13" font-weight="700" fill="#E2E8F0">MorphGenome + Brain</text>
+    <text x="52" y="140" font-size="10.5" fill="#94A3B8">μ, σ, lobes, twist, stretch,</text>
+    <text x="52" y="156" font-size="10.5" fill="#94A3B8">tendrils, RNN weights</text>
+
+    <!-- Step 2 -->
+    <rect x="268" y="72" width="196" height="106" rx="9" fill="#131730" stroke="#38BDF8" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="284" y="98" font-size="11" font-weight="700" letter-spacing="1.4" fill="#38BDF8">02 · MORPHOGENESIS</text>
+    <text x="284" y="120" font-size="13" font-weight="700" fill="#E2E8F0">40×40×3 Lenia Body</text>
+    <text x="284" y="140" font-size="10.5" fill="#94A3B8">Cytoplasm, membrane,</text>
+    <text x="284" y="156" font-size="10.5" fill="#94A3B8">organelles &amp; COM drift</text>
+
+    <!-- Step 3 -->
+    <rect x="500" y="72" width="196" height="106" rx="9" fill="#17132D" stroke="#A78BFA" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="516" y="98" font-size="11" font-weight="700" letter-spacing="1.4" fill="#A78BFA">03 · BEHAVIOR</text>
+    <text x="516" y="120" font-size="13" font-weight="700" fill="#E2E8F0">Neural Locomotion</text>
+    <text x="516" y="140" font-size="10.5" fill="#94A3B8">Nutrient gradient foraging,</text>
+    <text x="516" y="156" font-size="10.5" fill="#94A3B8">pheromone/toxin signals</text>
+
+    <!-- Step 4 -->
+    <rect x="732" y="72" width="196" height="106" rx="9" fill="#0B221D" stroke="#34D399" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="748" y="98" font-size="11" font-weight="700" letter-spacing="1.4" fill="#34D399">04 · SELECTION</text>
+    <text x="748" y="120" font-size="13" font-weight="700" fill="#E2E8F0">Coherent Ecology</text>
+    <text x="748" y="140" font-size="10.5" fill="#94A3B8">Biomass predation, costs,</text>
+    <text x="748" y="156" font-size="10.5" fill="#94A3B8">symbiosis, decomposition</text>
+
+    <!-- Step 5 -->
+    <rect x="964" y="72" width="200" height="106" rx="9" fill="#231226" stroke="#F472B6" stroke-opacity="0.55" stroke-width="1.2"/>
+    <text x="980" y="98" font-size="11" font-weight="700" letter-spacing="1.4" fill="#F472B6">05 · EVOLUTION</text>
+    <text x="980" y="120" font-size="13" font-weight="700" fill="#E2E8F0">Mitosis &amp; Archive</text>
+    <text x="980" y="140" font-size="10.5" fill="#94A3B8">Body division, mutation,</text>
+    <text x="980" y="156" font-size="10.5" fill="#94A3B8">phylogeny &amp; MAP-Elites</text>
+
+    <!-- Forward Arrows -->
+    <line x1="232" y1="125" x2="264" y2="125" stroke="#38F9D7" stroke-width="2" marker-end="url(#arr-c)"/>
+    <line x1="464" y1="125" x2="496" y2="125" stroke="#38F9D7" stroke-width="2" marker-end="url(#arr-c)"/>
+    <line x1="696" y1="125" x2="728" y2="125" stroke="#38F9D7" stroke-width="2" marker-end="url(#arr-c)"/>
+    <line x1="928" y1="125" x2="960" y2="125" stroke="#38F9D7" stroke-width="2" marker-end="url(#arr-c)"/>
+
+    <!-- Feedback Inheritance Return Arc -->
+    <path d="M1064,178 L1064,222 L134,222 L134,182" fill="none" stroke="#F472B6" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr-m)"/>
+    <rect x="448" y="209" width="304" height="24" rx="12" fill="#190E22" stroke="#F472B6" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="600" y="225" text-anchor="middle" font-size="11" font-weight="600" letter-spacing="1" fill="#F9A8D4">Heritable Descent · Saltational Mutation · Extinction</text>
+  </g>
+</svg>
