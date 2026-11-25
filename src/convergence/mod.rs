@@ -15,3 +15,4 @@ pub mod gpu_compute;
 pub mod lenia_body;
 #[cfg(feature = "observatory")]
 pub mod observatory;
+pub mod snapshot;

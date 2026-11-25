@@ -37,6 +37,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.iter().any(|a| a == "--snapshot") {
+        return convergence::snapshot::capture_showcase_screenshots(!force_cpu);
+    }
+
     if args.iter().any(|a| a == "--observatory" || a == "--gpu") {
         #[cfg(feature = "observatory")]
         {

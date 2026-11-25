@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate-cpu:
+    name: Pure CPU Build & Validation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check pure CPU build (--no-default-features)
+        run: cargo check --no-default-features
+      - name: Run convergence experiments (CPU-Rayon)
+        run: cargo run --release --no-default-features -- --experiment --cpu
+
+  validate-gpu-observatory:
+    name: Full GPU + Observatory Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary with GPU & Observatory features
+        run: cargo build --release
+      - name: Upload Windows Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbiote-abiogenesis-windows-x86_64
+          path: target/release/symbiote-abiogenesis.exe

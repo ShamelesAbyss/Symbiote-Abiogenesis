@@ -1,8 +1,8 @@
 [package]
-name = "symbiote"
-version = "0.22.0"
+name = "symbiote-abiogenesis"
+version = "0.1.0"
 edition = "2021"
-description = "Symbiote: Project Abiogenesis — Convergence of continuous cellular morphology and adaptive artificial ecology."
+description = "Symbiote: Project Abiogenesis — Convergence of continuous cellular morphology (Lenia) and adaptive artificial ecology."
 
 [features]
 default = ["gpu", "observatory"]
@@ -12,6 +12,7 @@ observatory = ["gpu", "dep:winit"]
 [dependencies]
 anyhow = "1"
 crossterm = "0.27"
+png = "0.17"
 ratatui = "0.26"
 rand = "0.8"
 rayon = "1.10"
