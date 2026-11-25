@@ -1,23 +1,24 @@
-//! Symbiote: Abiogenesis v0.4.0 — Project GENOMORPH Research Laboratory.
+//! Symbiote: Abiogenesis v0.5.0 — Project INFINITY Research Laboratory.
 //!
-//! Renders BOTH the smooth 40x40x3 continuous Lenia cellular bodies AND each organism's
-//! live articulated procedural anatomy (segments, fins, tails, jaws, antennae, carapaces,
-//! filter veils) in WGSL, paired with a custom obsidian-glass `egui` 0.31 workspace:
-//! - Live interactive NEAT `NeuralGraph` visualizer
-//! - Parent-offspring / ancestor anatomical homology diff (`diff_genomes`)
-//! - Developmental stage, digestive biology & functional organ inspector
+//! Strictly separates toroidal simulation topology (`[0, world_w) x [0, world_h)`) from
+//! camera/rendering topology so full-world overview NEVER repeats or tiles the ecosystem.
+//! Features:
+//! - Aspect-aware `SimCamera` with cursor-centered zoom, frustum culling, and navigable minimap
+//! - 256x144 multi-biome EcoField, smooth 40x40x3 Lenia bodies, and articulated procedural anatomy
+//! - Live interactive NEAT `NeuralGraph` visualizer & parent-offspring homology diff
 //! - MAP-Elites Discovery Archive with explicit `[USER INTERVENTION]` resurrection
 //! - Fullscreen (`F11` / `Alt+Enter`), minimize guards, zero-churn buffers & crash logging
 
+use crate::convergence::camera::SimCamera;
 use crate::convergence::crash_log;
 use crate::convergence::eco_field::{ECO_HEIGHT, ECO_WIDTH};
-use crate::convergence::engine::{toroidal_delta, ConvergenceWorld, MAX_ORGANISMS_BUFFER};
+use crate::convergence::engine::{ConvergenceWorld, MAX_ORGANISMS_BUFFER};
 use crate::convergence::genomorph::{diff_genomes, MAX_PHENOTYPE_ORGANS};
 use crate::convergence::lenia_body::{BODY_CHANNELS, BODY_RES};
 use crate::convergence::neural_graph::{NeuralGraph, NodeKind};
 use crate::convergence::persistence::{load_world, save_world_atomic};
 use crate::convergence::phylogeny::DiscoveryEntry;
-use crate::convergence::snapshot::render_png;
+use crate::convergence::snapshot::{hsv_to_rgb, organism_visual_radius, render_png_with_camera};
 use crate::convergence::universes::UniversePreset;
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
@@ -37,16 +38,16 @@ use winit::{
 struct CameraUniforms {
     center_x: f32,
     center_y: f32,
-    zoom: f32,
+    half_h: f32,
     aspect: f32,
+    world_w: f32,
+    world_h: f32,
     time: f32,
     org_count: u32,
     eco_w: u32,
     eco_h: u32,
     selected_idx: i32,
-    _pad0: i32,
-    _pad1: i32,
-    _pad2: i32,
+    show_bounds: u32,
 }
 
 #[repr(C)]
@@ -109,9 +110,7 @@ struct ObservatoryApp {
     prefer_gpu_compute: bool,
     window: Option<Arc<Window>>,
     gpu: Option<ObservatoryGpuState>,
-    cam_x: f32,
-    cam_y: f32,
-    cam_zoom: f32,
+    camera: SimCamera,
     paused: bool,
     single_step: bool,
     steps_per_frame: u32,
@@ -140,14 +139,14 @@ impl ObservatoryApp {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0xAB10_6E4E);
+        let world = ConvergenceWorld::new(seed, prefer_gpu_compute);
+        let camera = SimCamera::fit_world(world.bounds, 1440.0 / 900.0);
         Self {
-            world: ConvergenceWorld::new(seed, prefer_gpu_compute),
+            world,
             prefer_gpu_compute,
             window: None,
             gpu: None,
-            cam_x: 0.0,
-            cam_y: 0.0,
-            cam_zoom: 1.80,
+            camera,
             paused: false,
             single_step: false,
             steps_per_frame: 1,
@@ -155,7 +154,7 @@ impl ObservatoryApp {
             selected_org_id: None,
             track_selected: false,
             selected_preset: UniversePreset::PrimordialOcean,
-            status_toast: "Click any organism to inspect anatomy & NeuralGraph · F11 Fullscreen"
+            status_toast: "Scroll to zoom at cursor · Click organism to inspect · F11 Fullscreen"
                 .to_string(),
             cursor_pos: (0.0, 0.0),
             pop_history: VecDeque::with_capacity(120),
@@ -375,20 +374,24 @@ impl ObservatoryApp {
         let Some(gpu) = &self.gpu else { return };
         let w = gpu.config.width.max(1) as f32;
         let h = gpu.config.height.max(1) as f32;
-        let aspect = w / h;
-        let u = self.cursor_pos.0 / w;
-        let v = self.cursor_pos.1 / h;
-        let ndc_x = (u - 0.5) * 2.0;
-        let ndc_y = (v - 0.5) * 2.0;
-        let wx = self.cam_x + (ndc_x * aspect) / self.cam_zoom;
-        let wy = self.cam_y + ndc_y / self.cam_zoom;
+        let (wx, wy) = self
+            .camera
+            .screen_to_world(self.cursor_pos.0, self.cursor_pos.1, w, h);
 
+        // Never select organisms by clicking in the outer void outside [0, world_w] x [0, world_h]
+        if !self.world.bounds.contains(wx, wy) {
+            self.selected_org_id = None;
+            self.track_selected = false;
+            return;
+        }
+
+        let bounds = self.world.bounds;
         let mut best: Option<(u64, f32)> = None;
         for org in &self.world.organisms {
-            let dx = toroidal_delta(org.x - wx);
-            let dy = toroidal_delta(org.y - wy);
+            let dx = bounds.delta_x(org.x - wx);
+            let dy = bounds.delta_y(org.y - wy);
             let d = (dx * dx + dy * dy).sqrt();
-            let r = 0.085 + org.body.metrics.radius_norm * 0.075;
+            let r = organism_visual_radius(org) * 1.45;
             if d <= r && best.map(|(_, bd)| d < bd).unwrap_or(true) {
                 best = Some((org.id, d));
             }
@@ -416,15 +419,6 @@ impl ObservatoryApp {
             }
             self.pop_history.push_back(self.world.organisms.len() as f32);
             self.nutr_history.push_back(self.world.eco_field.mean_nutrient());
-        }
-
-        if self.track_selected {
-            if let Some(id) = self.selected_org_id {
-                if let Some(org) = self.world.organisms.iter().find(|o| o.id == id) {
-                    self.cam_x += toroidal_delta(org.x - self.cam_x) * 0.16;
-                    self.cam_y += toroidal_delta(org.y - self.cam_y) * 0.16;
-                }
-            }
         }
 
         let Some(win) = self.window.clone() else {
@@ -455,45 +449,37 @@ impl ObservatoryApp {
             ));
         }
 
-        let org_count = self.world.organisms.len().min(MAX_ORGANISMS_BUFFER);
-        let selected_idx = self
-            .selected_org_id
-            .and_then(|id| {
-                self.world
-                    .organisms
-                    .iter()
-                    .take(org_count)
-                    .position(|o| o.id == id)
-            })
-            .map(|i| i as i32)
-            .unwrap_or(-1);
+        let aspect = gpu.config.width as f32 / gpu.config.height.max(1) as f32;
+        if self.track_selected {
+            if let Some(id) = self.selected_org_id {
+                if let Some(org) = self.world.organisms.iter().find(|o| o.id == id) {
+                    let dx = self.world.bounds.delta_x(org.x - self.camera.center_x);
+                    let dy = self.world.bounds.delta_y(org.y - self.camera.center_y);
+                    self.camera.center_x = self.world.bounds.wrap_x(self.camera.center_x + dx * 0.16);
+                    self.camera.center_y = self.world.bounds.wrap_y(self.camera.center_y + dy * 0.16);
+                }
+            }
+        }
+        self.camera.clamp_to_bounds(self.world.bounds, aspect);
 
-        let cam = CameraUniforms {
-            center_x: self.cam_x,
-            center_y: self.cam_y,
-            zoom: self.cam_zoom,
-            aspect: gpu.config.width as f32 / gpu.config.height.max(1) as f32,
-            time: self.start_time.elapsed().as_secs_f32(),
-            org_count: org_count as u32,
-            eco_w: ECO_WIDTH as u32,
-            eco_h: ECO_HEIGHT as u32,
-            selected_idx,
-            _pad0: 0,
-            _pad1: 0,
-            _pad2: 0,
-        };
-        gpu.queue
-            .write_buffer(&gpu.cam_buf, 0, bytemuck::bytes_of(&cam));
-        gpu.queue.write_buffer(
-            &gpu.eco_buf,
-            0,
-            bytemuck::cast_slice(&self.world.eco_field.cells),
-        );
-
+        // CPU frustum culling before GPU upload: only visible organisms are uploaded,
+        // and selected_idx maps strictly to the culled index!
         self.metas_scratch.clear();
         self.bodies_scratch.clear();
         self.organs_scratch.clear();
-        for org in self.world.organisms.iter().take(org_count) {
+        let mut selected_idx: i32 = -1;
+
+        for org in self.world.organisms.iter().take(MAX_ORGANISMS_BUFFER) {
+            let radius = organism_visual_radius(org);
+            if !self
+                .camera
+                .is_visible(org.x, org.y, radius * 1.85, self.world.bounds, aspect)
+            {
+                continue;
+            }
+            if self.selected_org_id == Some(org.id) {
+                selected_idx = self.metas_scratch.len() as i32;
+            }
             let organ_start = self.organs_scratch.len() as u32;
             let organ_count = org.phenotype.organs.len().min(MAX_PHENOTYPE_ORGANS) as u32;
             for organ in org.phenotype.organs.iter().take(MAX_PHENOTYPE_ORGANS) {
@@ -508,9 +494,6 @@ impl ObservatoryApp {
                     _pad: 0,
                 });
             }
-            let radius = (0.055 + org.body.metrics.radius_norm * 0.058)
-                * (0.45 + org.maturity * 0.55)
-                * org.genomorph.base_scale;
             self.metas_scratch.push(GpuOrganismMeta {
                 x: org.x,
                 y: org.y,
@@ -532,6 +515,29 @@ impl ObservatoryApp {
                 self.bodies_scratch.push(0.0);
             }
         }
+
+        let visible_count = self.metas_scratch.len() as u32;
+        let cam = CameraUniforms {
+            center_x: self.camera.center_x,
+            center_y: self.camera.center_y,
+            half_h: self.camera.half_h,
+            aspect,
+            world_w: self.world.bounds.width,
+            world_h: self.world.bounds.height,
+            time: self.start_time.elapsed().as_secs_f32(),
+            org_count: visible_count,
+            eco_w: ECO_WIDTH as u32,
+            eco_h: ECO_HEIGHT as u32,
+            selected_idx,
+            show_bounds: if self.camera.show_bounds { 1 } else { 0 },
+        };
+        gpu.queue
+            .write_buffer(&gpu.cam_buf, 0, bytemuck::bytes_of(&cam));
+        gpu.queue.write_buffer(
+            &gpu.eco_buf,
+            0,
+            bytemuck::cast_slice(&self.world.eco_field.cells),
+        );
         if !self.metas_scratch.is_empty() {
             gpu.queue.write_buffer(
                 &gpu.org_meta_buf,
@@ -610,17 +616,18 @@ impl ObservatoryApp {
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("◉ ABIOGENESIS · GENOMORPH")
+                            egui::RichText::new("◉ ABIOGENESIS · INFINITY")
                                 .size(14.5)
                                 .strong()
                                 .color(egui::Color32::from_rgb(56, 249, 215)),
                         );
                         ui.label(
                             egui::RichText::new(format!(
-                                "{:.0} FPS · {} · Tick {}",
+                                "{:.0} FPS · {} · {:.0}×{:.0} world",
                                 self.current_fps,
                                 if stats.gpu_active { "RTX GPU + Rayon" } else { "CPU-Rayon" },
-                                stats.tick
+                                self.world.bounds.width,
+                                self.world.bounds.height
                             ))
                             .small()
                             .color(egui::Color32::from_rgb(130, 165, 195)),
@@ -647,15 +654,43 @@ impl ObservatoryApp {
                         ui.add(
                             egui::Slider::new(&mut self.steps_per_frame, 1..=4).text("Sim Speed"),
                         );
-                        ui.add(
-                            egui::Slider::new(&mut self.cam_zoom, 0.7..=16.0)
-                                .logarithmic(true)
-                                .text("Microscope"),
+                        let mut zoom_val = self.camera.zoom_factor(self.world.bounds, aspect);
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut zoom_val, 1.0..=20.0)
+                                    .logarithmic(true)
+                                    .text("Zoom"),
+                            )
+                            .changed()
+                        {
+                            self.camera
+                                .set_zoom_factor(zoom_val, self.world.bounds, aspect);
+                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("⌖ Fit World (0)").clicked() {
+                                self.camera = SimCamera::fit_world(self.world.bounds, aspect);
+                                self.track_selected = false;
+                            }
+                            ui.checkbox(&mut self.camera.show_bounds, "Bounds");
+                        });
+
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new("WORLD MINIMAP (CLICK / DRAG)")
+                                .small()
+                                .strong()
+                                .color(egui::Color32::from_rgb(148, 163, 184)),
                         );
-                        if ui.button("⌖ Reset View (0)").clicked() {
-                            self.cam_x = 0.0;
-                            self.cam_y = 0.0;
-                            self.cam_zoom = 1.80;
+                        if let Some((tx, ty)) = draw_minimap(
+                            ui,
+                            &self.world,
+                            self.camera,
+                            aspect,
+                            self.selected_org_id,
+                        ) {
+                            self.camera.center_x = tx;
+                            self.camera.center_y = ty;
+                            self.camera.clamp_to_bounds(self.world.bounds, aspect);
                             self.track_selected = false;
                         }
 
@@ -755,10 +790,10 @@ impl ObservatoryApp {
                         ui.add_space(6.0);
                         ui.separator();
                         ui.horizontal(|ui| {
-                            if ui.button("💾 Save v3").clicked() {
+                            if ui.button("💾 Save v4").clicked() {
                                 action_save = true;
                             }
-                            if ui.button("📂 Load v3").clicked() {
+                            if ui.button("📂 Load v4").clicked() {
                                 action_load = true;
                             }
                             if ui.button("📸 PNG").clicked() {
@@ -801,9 +836,10 @@ impl ObservatoryApp {
                                     ui.checkbox(&mut self.track_selected, "Track");
                                 });
                                 if ui.button("🔎 Focus Microscope (6×)").clicked() {
-                                    self.cam_x = org.x;
-                                    self.cam_y = org.y;
-                                    self.cam_zoom = 6.0;
+                                    self.camera.center_x = org.x;
+                                    self.camera.center_y = org.y;
+                                    self.camera.half_h = 0.85;
+                                    self.camera.clamp_to_bounds(self.world.bounds, aspect);
                                     self.track_selected = true;
                                 }
                                 ui.label(
@@ -1042,6 +1078,7 @@ impl ObservatoryApp {
                 .unwrap_or(0xAB10_6E4E);
             self.world =
                 ConvergenceWorld::from_universe(seed, preset.config(), self.prefer_gpu_compute);
+            self.camera = SimCamera::fit_world(self.world.bounds, aspect);
             self.selected_org_id = None;
             self.track_selected = false;
             self.pop_history.clear();
@@ -1056,7 +1093,7 @@ impl ObservatoryApp {
         }
         if action_save {
             match save_world_atomic(&self.world, "autosave") {
-                Ok(p) => self.status_toast = format!("Saved v3 {}", p.display()),
+                Ok(p) => self.status_toast = format!("Saved v4 {}", p.display()),
                 Err(e) => self.status_toast = format!("Save error: {e}"),
             }
         }
@@ -1067,21 +1104,20 @@ impl ObservatoryApp {
             ) {
                 Ok(w) => {
                     self.world = w;
+                    self.camera = SimCamera::fit_world(self.world.bounds, aspect);
                     self.selected_org_id = None;
-                    self.status_toast = "Loaded v3 autosave world".to_string();
+                    self.status_toast = "Loaded v4 autosave world".to_string();
                 }
                 Err(e) => self.status_toast = format!("Load error: {e}"),
             }
         }
         if action_screenshot {
             let _ = std::fs::create_dir_all("assets/screenshots");
-            match render_png(
+            match render_png_with_camera(
                 &self.world,
                 1440,
                 810,
-                self.cam_x,
-                self.cam_y,
-                self.cam_zoom,
+                self.camera,
                 Path::new("assets/screenshots/observatory_capture.png"),
             ) {
                 Ok(()) => {
@@ -1100,6 +1136,78 @@ impl ObservatoryApp {
             self.last_fps_update = Instant::now();
         }
     }
+}
+
+fn draw_minimap(
+    ui: &mut egui::Ui,
+    world: &ConvergenceWorld,
+    camera: SimCamera,
+    aspect: f32,
+    selected_id: Option<u64>,
+) -> Option<(f32, f32)> {
+    let bounds = world.bounds;
+    let map_w = 244.0;
+    let map_h = (map_w * (bounds.height / bounds.width.max(1.0))).clamp(95.0, 150.0);
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(map_w, map_h), egui::Sense::click_and_drag());
+
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect,
+        6.0,
+        egui::Color32::from_rgba_unmultiplied(6, 11, 20, 240),
+    );
+    painter.rect_stroke(
+        rect,
+        6.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(56, 249, 215, 70)),
+        egui::StrokeKind::Inside,
+    );
+
+    // Draw every organism strictly once inside the minimap world bounds
+    for org in &world.organisms {
+        let nx = (org.x / bounds.width).clamp(0.0, 1.0);
+        let ny = (org.y / bounds.height).clamp(0.0, 1.0);
+        let pos = egui::pos2(rect.left() + nx * rect.width(), rect.top() + ny * rect.height());
+        let rgb = hsv_to_rgb(org.morph_genome.biolum_hue, 0.85, 0.95);
+        let col = egui::Color32::from_rgb(
+            (rgb[0] * 255.0) as u8,
+            (rgb[1] * 255.0) as u8,
+            (rgb[2] * 255.0) as u8,
+        );
+        if selected_id == Some(org.id) {
+            painter.circle_stroke(
+                pos,
+                4.2,
+                egui::Stroke::new(1.4, egui::Color32::from_rgb(56, 249, 215)),
+            );
+            painter.circle_filled(pos, 2.3, col);
+        } else {
+            painter.circle_filled(pos, 1.9, col);
+        }
+    }
+
+    // Draw clamped camera viewport rectangle
+    let (min_x, min_y, max_x, max_y) = camera.visible_rect(aspect);
+    let vx0 = rect.left() + (min_x / bounds.width).clamp(0.0, 1.0) * rect.width();
+    let vy0 = rect.top() + (min_y / bounds.height).clamp(0.0, 1.0) * rect.height();
+    let vx1 = rect.left() + (max_x / bounds.width).clamp(0.0, 1.0) * rect.width();
+    let vy1 = rect.top() + (max_y / bounds.height).clamp(0.0, 1.0) * rect.height();
+    let view_rect = egui::Rect::from_min_max(egui::pos2(vx0, vy0), egui::pos2(vx1, vy1));
+    painter.rect_stroke(
+        view_rect,
+        2.0,
+        egui::Stroke::new(1.3, egui::Color32::from_rgb(56, 249, 215)),
+        egui::StrokeKind::Inside,
+    );
+
+    if (response.clicked() || response.dragged()) && response.interact_pointer_pos().is_some() {
+        let p = response.interact_pointer_pos().unwrap();
+        let nx = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+        let ny = ((p.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
+        return Some((nx * bounds.width, ny * bounds.height));
+    }
+    None
 }
 
 fn draw_neural_graph(ui: &mut egui::Ui, brain: &NeuralGraph) {
@@ -1246,10 +1354,14 @@ impl ApplicationHandler for ObservatoryApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let attrs = Window::default_attributes()
-                .with_title("SYMBIOTE: ABIOGENESIS v0.4.0 — PROJECT GENOMORPH")
+                .with_title("SYMBIOTE: ABIOGENESIS v0.5.0 — PROJECT INFINITY")
                 .with_inner_size(winit::dpi::LogicalSize::new(1440.0, 900.0));
             let win = Arc::new(event_loop.create_window(attrs).expect("create window"));
             self.init_gpu(win.clone());
+            if let Some(gpu) = &self.gpu {
+                let aspect = gpu.config.width as f32 / gpu.config.height.max(1) as f32;
+                self.camera = SimCamera::fit_world(self.world.bounds, aspect);
+            }
             self.window = Some(win);
         }
     }
@@ -1274,6 +1386,8 @@ impl ApplicationHandler for ObservatoryApp {
                         gpu.config.width = new_size.width.min(max_dim);
                         gpu.config.height = new_size.height.min(max_dim);
                         gpu.surface.configure(&gpu.device, &gpu.config);
+                        let aspect = gpu.config.width as f32 / gpu.config.height.max(1) as f32;
+                        self.camera.clamp_to_bounds(self.world.bounds, aspect);
                         crash_log::log_event(&format!(
                             "window resized -> {}x{}",
                             gpu.config.width, gpu.config.height
@@ -1300,7 +1414,18 @@ impl ApplicationHandler for ObservatoryApp {
                     MouseScrollDelta::PixelDelta(p) => (p.y / 40.0) as f32,
                 };
                 let factor = if scroll > 0.0 { 1.15 } else { 1.0 / 1.15 };
-                self.cam_zoom = (self.cam_zoom * factor).clamp(0.7, 18.0);
+                if let Some(gpu) = &self.gpu {
+                    let w = gpu.config.width.max(1) as f32;
+                    let h = gpu.config.height.max(1) as f32;
+                    self.camera.zoom_at_cursor(
+                        factor,
+                        self.cursor_pos.0,
+                        self.cursor_pos.1,
+                        w,
+                        h,
+                        self.world.bounds,
+                    );
+                }
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -1311,7 +1436,11 @@ impl ApplicationHandler for ObservatoryApp {
                     },
                 ..
             } if !egui_consumed => {
-                let pan = 0.08 / self.cam_zoom;
+                let aspect = self
+                    .gpu
+                    .as_ref()
+                    .map(|g| g.config.width as f32 / g.config.height.max(1) as f32)
+                    .unwrap_or(16.0 / 9.0);
                 match code {
                     KeyCode::Escape | KeyCode::KeyQ => event_loop.exit(),
                     KeyCode::Space => self.paused = !self.paused,
@@ -1320,26 +1449,30 @@ impl ApplicationHandler for ObservatoryApp {
                     KeyCode::Enter if self.alt_held => self.toggle_borderless_fullscreen(),
                     KeyCode::ArrowLeft | KeyCode::KeyA => {
                         self.track_selected = false;
-                        self.cam_x -= pan;
+                        self.camera.pan(-0.14, 0.0, self.world.bounds, aspect);
                     }
                     KeyCode::ArrowRight | KeyCode::KeyD => {
                         self.track_selected = false;
-                        self.cam_x += pan;
+                        self.camera.pan(0.14, 0.0, self.world.bounds, aspect);
                     }
                     KeyCode::ArrowUp | KeyCode::KeyW => {
                         self.track_selected = false;
-                        self.cam_y -= pan;
+                        self.camera.pan(0.0, -0.14, self.world.bounds, aspect);
                     }
                     KeyCode::ArrowDown | KeyCode::KeyS => {
                         self.track_selected = false;
-                        self.cam_y += pan;
+                        self.camera.pan(0.0, 0.14, self.world.bounds, aspect);
                     }
-                    KeyCode::Equal => self.cam_zoom = (self.cam_zoom * 1.2).clamp(0.7, 18.0),
-                    KeyCode::Minus => self.cam_zoom = (self.cam_zoom / 1.2).clamp(0.7, 18.0),
+                    KeyCode::Equal => {
+                        let z = self.camera.zoom_factor(self.world.bounds, aspect) * 1.25;
+                        self.camera.set_zoom_factor(z, self.world.bounds, aspect);
+                    }
+                    KeyCode::Minus => {
+                        let z = self.camera.zoom_factor(self.world.bounds, aspect) / 1.25;
+                        self.camera.set_zoom_factor(z, self.world.bounds, aspect);
+                    }
                     KeyCode::Digit0 => {
-                        self.cam_x = 0.0;
-                        self.cam_y = 0.0;
-                        self.cam_zoom = 1.80;
+                        self.camera = SimCamera::fit_world(self.world.bounds, aspect);
                         self.track_selected = false;
                     }
                     _ => {}
@@ -1379,16 +1512,16 @@ const OBSERVATORY_WGSL: &str = r#"
 struct Camera {
     center_x: f32,
     center_y: f32,
-    zoom: f32,
+    half_h: f32,
     aspect: f32,
+    world_w: f32,
+    world_h: f32,
     time: f32,
     org_count: u32,
     eco_w: u32,
     eco_h: u32,
     selected_idx: i32,
-    pad0: i32,
-    pad1: i32,
-    pad2: i32,
+    show_bounds: u32,
 };
 
 struct OrgMeta {
@@ -1456,8 +1589,11 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> vec3<f32> {
     return rgb + vec3<f32>(v - c);
 }
 
-fn toroidal_delta(d: f32) -> f32 {
-    return d - 2.0 * floor((d + 1.0) * 0.5);
+fn toroidal_delta_axis(d: f32, span: f32) -> f32 {
+    let half = span * 0.5;
+    if (d > half) { return d - span; }
+    if (d < -half) { return d + span; }
+    return d;
 }
 
 fn sd_capsule_t(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
@@ -1468,8 +1604,8 @@ fn sd_capsule_t(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
 }
 
 fn sample_eco(wx: f32, wy: f32) -> vec4<f32> {
-    let u = fract((wx + 1.0) * 0.5) * f32(cam.eco_w);
-    let v = fract((wy + 1.0) * 0.5) * f32(cam.eco_h);
+    let u = clamp(wx / cam.world_w, 0.0, 0.9999) * f32(cam.eco_w);
+    let v = clamp(wy / cam.world_h, 0.0, 0.9999) * f32(cam.eco_h);
     let x0 = u32(floor(u)) % cam.eco_w;
     let y0 = u32(floor(v)) % cam.eco_h;
     let x1 = (x0 + 1u) % cam.eco_w;
@@ -1506,17 +1642,33 @@ fn sample_body(org_idx: u32, lu: f32, lv: f32) -> vec3<f32> {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ndc = (in.uv - vec2<f32>(0.5, 0.5)) * 2.0;
-    let wx = cam.center_x + (ndc.x * cam.aspect) / cam.zoom;
-    let wy = cam.center_y + ndc.y / cam.zoom;
+    let wx = cam.center_x + ndc.x * cam.half_h * cam.aspect;
+    let wy = cam.center_y + ndc.y * cam.half_h;
 
-    let vig = clamp(1.0 - 0.24 * (ndc.x * ndc.x * 0.45 + ndc.y * ndc.y), 0.55, 1.0);
+    // Strict world-boundary clipping: NEVER repeat or tile the world outside [0, world_w] x [0, world_h]
+    if (wx < 0.0 || wx > cam.world_w || wy < 0.0 || wy > cam.world_h) {
+        var void_col = vec3<f32>(0.002, 0.003, 0.007);
+        if (cam.show_bounds != 0u) {
+            let edge_dx = max(max(-wx, wx - cam.world_w), 0.0);
+            let edge_dy = max(max(-wy, wy - cam.world_h), 0.0);
+            let edge_d = length(vec2<f32>(edge_dx, edge_dy));
+            let px_size = (2.0 * cam.half_h) / 900.0;
+            let glow = exp(-edge_d / max(px_size * 5.0, 0.008)) * 0.22;
+            void_col += vec3<f32>(0.06, 0.34, 0.42) * glow;
+        }
+        let vx = max(void_col, vec3<f32>(0.0));
+        let vm = (vx * (2.51 * vx + 0.03)) / (vx * (2.43 * vx + 0.59) + 0.14);
+        return vec4<f32>(pow(clamp(vm, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(0.92)), 1.0);
+    }
+
+    let vig = clamp(1.0 - 0.22 * (ndc.x * ndc.x * 0.45 + ndc.y * ndc.y), 0.58, 1.0);
     var col = vec3<f32>(0.003, 0.005, 0.011) * vig;
 
     let e = sample_eco(wx, wy);
-    let nutr_wisp = pow(max(e.x - 0.36, 0.0), 2.2);
+    let nutr_wisp = pow(max(e.x - 0.34, 0.0), 2.1);
     let pher_wisp = pow(e.y, 1.5);
     let tox_wisp = pow(e.z, 1.6);
-    let root_fil = pow(e.w, 2.4);
+    let root_fil = pow(e.w, 2.3);
 
     col += vec3<f32>(0.008, 0.055, 0.085) * nutr_wisp;
     col += vec3<f32>(0.14, 0.05, 0.26) * pher_wisp;
@@ -1526,8 +1678,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     for (var i: u32 = 0u; i < cam.org_count; i = i + 1u) {
         let o = orgs[i];
         let bound_r = o.radius * 1.75;
-        let dx = toroidal_delta(wx - o.x);
-        let dy = toroidal_delta(wy - o.y);
+        let dx = toroidal_delta_axis(wx - o.x, cam.world_w);
+        let dy = toroidal_delta_axis(wy - o.y, cam.world_h);
         if (abs(dx) > bound_r || abs(dy) > bound_r) {
             continue;
         }
@@ -1596,6 +1748,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if (abs(dist - 0.96) < 0.025) {
                 col += vec3<f32>(0.22, 0.97, 0.84) * (0.65 + 0.25 * sin(cam.time * 4.0));
             }
+        }
+    }
+
+    if (cam.show_bounds != 0u) {
+        let px_size = (2.0 * cam.half_h) / 900.0;
+        let border = min(min(wx, cam.world_w - wx), min(wy, cam.world_h - wy));
+        if (border < px_size * 1.6) {
+            col += vec3<f32>(0.08, 0.34, 0.42);
         }
     }
 

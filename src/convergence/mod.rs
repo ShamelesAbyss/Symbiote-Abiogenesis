@@ -4,6 +4,7 @@
 //! evolution (`neural_graph`), continuous 3-channel Lenia morphology (`lenia_body`),
 //! and toroidal reaction-diffusion ecology (`eco_field`).
 
+pub mod camera;
 pub mod crash_log;
 pub mod eco_field;
 pub mod engine;

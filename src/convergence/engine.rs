@@ -9,6 +9,7 @@
 //! 6. Genuine anatomy-driven predation, armor defense, zero-sum symbiosis & MAP-Elites phylogeny
 
 use crate::app::{App, Environment};
+use crate::convergence::camera::WorldBounds;
 use crate::convergence::eco_field::{EcoField, ECO_HEIGHT, ECO_WIDTH};
 use crate::convergence::genomorph::{AnatomyPhenotype, GenomorphGenome, LifeStage};
 use crate::convergence::lenia_body::{LeniaBody, LocalEnvInput, MorphGenome};
@@ -24,7 +25,7 @@ use std::collections::HashMap;
 use std::f32::consts::TAU;
 
 pub const MAX_ORGANISMS_BUFFER: usize = 320;
-const HASH_CELL_SIZE: f32 = 0.22;
+const HASH_CELL_SIZE: f32 = 0.85;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MorphOrganism {
@@ -83,6 +84,7 @@ pub struct ConvergenceStats {
 
 pub struct ConvergenceWorld {
     pub seed: u64,
+    pub bounds: WorldBounds,
     pub universe: UniverseConfig,
     pub symbiote: App,
     pub eco_field: EcoField,
@@ -106,8 +108,9 @@ impl ConvergenceWorld {
 
     pub fn from_universe(seed: u64, universe: UniverseConfig, prefer_gpu: bool) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
+        let bounds = WorldBounds::new(universe.world_width, universe.world_height);
         let symbiote = App::new();
-        let eco_field = EcoField::new(ECO_WIDTH, ECO_HEIGHT);
+        let eco_field = EcoField::new(ECO_WIDTH, ECO_HEIGHT, bounds, seed);
         let mut phylogeny = PhylogenyArchive::new();
 
         let cap = universe.max_organisms.min(MAX_ORGANISMS_BUFFER);
@@ -142,8 +145,8 @@ impl ConvergenceWorld {
             let phenotype = AnatomyPhenotype::express(&genomorph, maturity, body.pulse_phase);
             let archetype = derive_archetype(eco_genome, crate::particle::RareTrait::None, 8);
 
-            let x = rng.gen_range(-0.88..0.88);
-            let y = rng.gen_range(-0.88..0.88);
+            let x = rng.gen_range(0.4..(bounds.width - 0.4));
+            let y = rng.gen_range(0.4..(bounds.height - 0.4));
             let id = next_org_id;
             next_org_id += 1;
             phylogeny.record_birth(id, None, id, tribe, 0, 0, &genomorph, &brain);
@@ -198,6 +201,7 @@ impl ConvergenceWorld {
 
         Self {
             seed,
+            bounds,
             universe,
             symbiote,
             eco_field,
@@ -254,8 +258,8 @@ impl ConvergenceWorld {
             phenotype,
             brain: entry.brain.clone(),
             body,
-            x: self.rng.gen_range(-0.6..0.6),
-            y: self.rng.gen_range(-0.6..0.6),
+            x: self.rng.gen_range(1.0..(self.bounds.width - 1.0)),
+            y: self.rng.gen_range(1.0..(self.bounds.height - 1.0)),
             vx: 0.0,
             vy: 0.0,
             energy: 68.0,
@@ -340,8 +344,9 @@ impl ConvergenceWorld {
                     mutagen: if env == Environment::Storm { 0.35 } else { 0.05 },
                 };
 
-                // Sense nearest neighbor within organism's evolved SensoryAntenna range
-                let (my_x, my_y, my_h, _, _, sensor_r, _, my_scale) = snap[i];
+                // Sense nearest neighbor within organism's evolved SensoryAntenna range (world units)
+                let (my_x, my_y, my_h, _, _, sensor_r_norm, _, my_scale) = snap[i];
+                let sensor_r = sensor_r_norm * 5.2;
                 let (cx, cy) = hash_cell(my_x, my_y);
                 let mut best_d = sensor_r;
                 let mut best_rel_angle = 0.0f32;
@@ -357,8 +362,8 @@ impl ConvergenceWorld {
                             if i == j {
                                 continue;
                             }
-                            let dx = toroidal_delta(snap[j].0 - my_x);
-                            let dy = toroidal_delta(snap[j].1 - my_y);
+                            let dx = self.bounds.delta_x(snap[j].0 - my_x);
+                            let dy = self.bounds.delta_y(snap[j].1 - my_y);
                             let d = (dx * dx + dy * dy).sqrt();
                             if d > 1e-4 && d < best_d {
                                 best_d = d;
@@ -449,14 +454,14 @@ impl ConvergenceWorld {
             self.organisms[i].body.heading = (self.organisms[i].body.heading + turn).rem_euclid(TAU);
             let h = self.organisms[i].body.heading;
 
-            let thrust_mag = ((out[0] + 0.35).max(0.0) * 0.0052 * pheno.propulsion_power)
+            let thrust_mag = ((out[0] + 0.35).max(0.0) * 0.022 * pheno.propulsion_power)
                 * (0.65 + m.organelle_mass * 2.0);
-            let mut fx = h.cos() * thrust_mag + m.com_dx * 0.0045;
-            let mut fy = h.sin() * thrust_mag + m.com_dy * 0.0045;
+            let mut fx = h.cos() * thrust_mag + m.com_dx * 0.018;
+            let mut fy = h.sin() * thrust_mag + m.com_dy * 0.018;
 
             let my_x = snap[i].0;
             let my_y = snap[i].1;
-            let my_radius = 0.032 + m.radius_norm * 0.042 * self.organisms[i].maturity;
+            let my_radius = 0.16 + m.radius_norm * 0.22 * self.organisms[i].maturity;
             let want_bite = out[2] > 0.18 || self.organisms[i].genomorph.diet_carnivory > 0.62;
             let (cx, cy) = hash_cell(my_x, my_y);
 
@@ -469,24 +474,23 @@ impl ConvergenceWorld {
                         if i == j {
                             continue;
                         }
-                        let dx = toroidal_delta(snap[j].0 - my_x);
-                        let dy = toroidal_delta(snap[j].1 - my_y);
+                        let dx = self.bounds.delta_x(snap[j].0 - my_x);
+                        let dy = self.bounds.delta_y(snap[j].1 - my_y);
                         let d2 = dx * dx + dy * dy;
-                        if d2 < 1e-6 || d2 > 0.045 {
+                        if d2 < 1e-6 || d2 > 1.2 {
                             continue;
                         }
                         let d = d2.sqrt();
-                        let contact_r = my_radius + 0.032 + snap[j].3 * 0.04;
+                        let contact_r = my_radius + 0.16 + snap[j].3 * 0.22;
 
                         if d < contact_r {
                             let push = (contact_r - d) * 0.14;
                             fx -= (dx / d) * push;
                             fy -= (dy / d) * push;
 
-                            // Genuine Anatomy-Driven Predation:
-                            // Requires directional jaw alignment, bite_power, and bite_range!
                             let forward_dot = (dx / d) * h.cos() + (dy / d) * h.sin();
-                            if want_bite && d <= pheno.bite_range + contact_r * 0.6 && forward_dot > 0.25 && pheno.bite_power > 0.12 {
+                            let world_bite_r = pheno.bite_range * 5.0;
+                            if want_bite && d <= world_bite_r + contact_r * 0.6 && forward_dot > 0.25 && pheno.bite_power > 0.12 {
                                 let defender_armor = snap[j].4;
                                 let bite_frac = (pheno.bite_power * 0.32 * (1.0 - defender_armor))
                                     .clamp(0.02, 0.26);
@@ -494,13 +498,12 @@ impl ConvergenceWorld {
                                 let flesh = (snap[j].3 * bite_frac * 95.0).min(snap[j].6 * 0.35);
                                 meat_gained[i] += flesh;
                                 energy_delta[j] -= flesh * 0.85;
-                                energy_delta[i] -= 0.45; // real attack energy expenditure
+                                energy_delta[i] -= 0.45;
                                 self.total_predations += 1;
                                 deposits.push((snap[j].0, snap[j].1, 0.0, 0.0, 0.10, 0.0));
                             } else if self.organisms[i].lineage_id == self.organisms[j].lineage_id
                                 && snap[i].6 > snap[j].6 + 10.0
                             {
-                                // Kin / Colonial Symbiosis: zero-sum energy sharing
                                 let transfer = ((snap[i].6 - snap[j].6) * 0.035).min(1.0);
                                 energy_delta[i] -= transfer;
                                 energy_delta[j] += transfer;
@@ -510,11 +513,12 @@ impl ConvergenceWorld {
                 }
             }
 
+            let bounds = self.bounds;
             let org = &mut self.organisms[i];
             org.vx = (org.vx + fx) * pheno.drag_factor;
             org.vy = (org.vy + fy) * pheno.drag_factor;
-            org.x = wrap_world_coord(org.x + org.vx);
-            org.y = wrap_world_coord(org.y + org.vy);
+            org.x = bounds.wrap_x(org.x + org.vx);
+            org.y = bounds.wrap_y(org.y + org.vy);
 
             // Digestive Biology:
             // 1. Filter/absorb dissolved ambient nutrients into stomach_plant
@@ -548,7 +552,7 @@ impl ConvergenceWorld {
             let maintenance = (0.10
                 + pheno.total_metabolic_cost
                 + m.mass * 0.65
-                + speed2 * 135.0
+                + speed2 * 8.5
                 + dig * 0.08)
                 * env.hunger_mult()
                 * self.universe.metabolic_cost_mult
@@ -687,10 +691,10 @@ impl ConvergenceWorld {
                     phenotype: child_pheno,
                     brain: child_brain,
                     body: daughter_body,
-                    x: wrap_world_coord(parent.x + angle.cos() * 0.06),
-                    y: wrap_world_coord(parent.y + angle.sin() * 0.06),
-                    vx: angle.cos() * 0.004,
-                    vy: angle.sin() * 0.004,
+                    x: self.bounds.wrap_x(parent.x + angle.cos() * 0.32),
+                    y: self.bounds.wrap_y(parent.y + angle.sin() * 0.32),
+                    vx: angle.cos() * 0.016,
+                    vy: angle.sin() * 0.016,
                     energy: child_energy,
                     stomach_plant: 4.0,
                     stomach_meat: 0.0,
@@ -745,8 +749,8 @@ impl ConvergenceWorld {
                 phenotype,
                 brain,
                 body,
-                x: self.rng.gen_range(-0.8..0.8),
-                y: self.rng.gen_range(-0.8..0.8),
+                x: self.rng.gen_range(0.5..(self.bounds.width - 0.5)),
+                y: self.rng.gen_range(0.5..(self.bounds.height - 0.5)),
                 vx: 0.0,
                 vy: 0.0,
                 energy: 58.0,
@@ -843,26 +847,6 @@ fn hash_cell(x: f32, y: f32) -> (i32, i32) {
         (x / HASH_CELL_SIZE).floor() as i32,
         (y / HASH_CELL_SIZE).floor() as i32,
     )
-}
-
-#[inline]
-pub fn wrap_world_coord(v: f32) -> f32 {
-    let mut w = (v + 1.0).rem_euclid(2.0) - 1.0;
-    if w >= 1.0 {
-        w -= 2.0;
-    }
-    w
-}
-
-#[inline]
-pub fn toroidal_delta(d: f32) -> f32 {
-    if d > 1.0 {
-        d - 2.0
-    } else if d < -1.0 {
-        d + 2.0
-    } else {
-        d
-    }
 }
 
 fn random_eco_genome(rng: &mut StdRng) -> Genome {

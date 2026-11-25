@@ -2,6 +2,23 @@
 
 All notable changes to **Symbiote: Abiogenesis** are documented in this file.
 
+## [0.5.0] - 2026-11-25 — Project INFINITY
+### Fixed & Changed
+- **Eliminated Visible World Repetition & Duplicated Selection Rings** (`src/convergence/camera.rs`, `observatory.rs`, `snapshot.rs`):
+  - Separated simulation topology (toroidal wrapping on `[0, world_w) × [0, world_h)`) from camera/rendering topology.
+  - Both `OBSERVATORY_WGSL` and `snapshot.rs` strictly clip outside `[0, world_w] × [0, world_h]` to deep outer void with an optional subtle world-boundary frame, guaranteeing each organism and selection indicator appears strictly once in full-world overview (allowing only clipped seam fragments on toroidal edges).
+  - Updated mouse hit-testing (`select_organism_at_cursor`) to reject clicks in the outer void and map screen pixels through `SimCamera::screen_to_world`.
+- **Expansive Widescreen Multi-Biome Worlds** (`src/convergence/eco_field.rs`, `universes.rs`, `engine.rs`):
+  - Expanded world coordinate space from `[-1, 1] × [-1, 1]` to configurable widescreen `WorldBounds` (`16×9`, `20×11.25`, `24×13.5` across the 12 experimental universes).
+  - Upgraded `EcoField` from `128×128×4` to `256×144×4` with seed-dependent multi-biome structure (hydrothermal vents, toxic trenches, sinuous mycelial ridges).
+- **Professional `SimCamera`, Frustum Culling & Navigable Minimap** (`src/convergence/camera.rs`, `observatory.rs`):
+  - Added aspect-ratio-aware `SimCamera` (`fit_world`, cursor-centered wheel zoom, smooth keyboard panning, bounds clamping, organism tracking).
+  - Added CPU frustum culling (`camera.is_visible(...)`) before GPU buffer upload so off-screen organisms are skipped while maintaining exact `selected_idx` mapping.
+  - Added an interactive **World Minimap** in the `egui` Research Laboratory showing all organisms and the clamped viewport rectangle (click/drag to navigate), plus **Fit World (0)** and **Bounds** toggles.
+- **Versioned v4 Persistence & Camera Unit Tests** (`persistence.rs`, `experiments.rs`):
+  - Upgraded atomic world saves to `v4` (`256×144×4` `EcoField` + `WorldBounds`).
+  - Added `exp_k_infinity_camera_and_world_bounds` automated test covering `fit_world` across 16:9 / 21:9 / 4:3, `screen_to_world` ↔ `world_to_uv` roundtrip, cursor-centered zoom invariance, toroidal delta symmetry, and frustum culling (7/7 passing in CI).
+
 ## [0.4.0] - 2026-11-25 — Project GENOMORPH
 ### Added
 - **GENOMORPH Developmental Genetics & Procedural Anatomy** (`src/convergence/genomorph.rs`):

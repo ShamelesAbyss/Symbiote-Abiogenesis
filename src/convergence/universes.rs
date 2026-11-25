@@ -72,11 +72,13 @@ impl UniversePreset {
     }
 
     pub fn config(self) -> UniverseConfig {
-        match self {
+        let mut cfg = match self {
             Self::PrimordialOcean => UniverseConfig {
                 preset: self,
-                initial_organisms: 36,
-                max_organisms: 96,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 56,
+                max_organisms: 140,
                 nutrient_regen_mult: 1.25,
                 metabolic_cost_mult: 0.92,
                 mutation_rate: 0.065,
@@ -87,8 +89,10 @@ impl UniversePreset {
             },
             Self::GenesisZero => UniverseConfig {
                 preset: self,
-                initial_organisms: 24,
-                max_organisms: 160,
+                world_width: 16.0,
+                world_height: 9.0,
+                initial_organisms: 28,
+                max_organisms: 180,
                 nutrient_regen_mult: 1.20,
                 metabolic_cost_mult: 0.88,
                 mutation_rate: 0.095,
@@ -99,8 +103,10 @@ impl UniversePreset {
             },
             Self::PredatorsParadise => UniverseConfig {
                 preset: self,
-                initial_organisms: 56,
-                max_organisms: 220,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 72,
+                max_organisms: 240,
                 nutrient_regen_mult: 1.05,
                 metabolic_cost_mult: 1.08,
                 mutation_rate: 0.075,
@@ -111,8 +117,10 @@ impl UniversePreset {
             },
             Self::TheLivingReef => UniverseConfig {
                 preset: self,
-                initial_organisms: 44,
-                max_organisms: 180,
+                world_width: 24.0,
+                world_height: 13.5,
+                initial_organisms: 64,
+                max_organisms: 220,
                 nutrient_regen_mult: 1.48,
                 metabolic_cost_mult: 0.84,
                 mutation_rate: 0.055,
@@ -123,8 +131,10 @@ impl UniversePreset {
             },
             Self::EvolutionaryCrucible => UniverseConfig {
                 preset: self,
-                initial_organisms: 48,
-                max_organisms: 200,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 56,
+                max_organisms: 220,
                 nutrient_regen_mult: 1.12,
                 metabolic_cost_mult: 1.05,
                 mutation_rate: 0.110,
@@ -135,8 +145,10 @@ impl UniversePreset {
             },
             Self::AbyssalBiosphere => UniverseConfig {
                 preset: self,
-                initial_organisms: 36,
-                max_organisms: 180,
+                world_width: 24.0,
+                world_height: 13.5,
+                initial_organisms: 48,
+                max_organisms: 200,
                 nutrient_regen_mult: 0.58,
                 metabolic_cost_mult: 1.22,
                 mutation_rate: 0.055,
@@ -147,7 +159,9 @@ impl UniversePreset {
             },
             Self::Genesis => UniverseConfig {
                 preset: self,
-                initial_organisms: 16,
+                world_width: 16.0,
+                world_height: 9.0,
+                initial_organisms: 20,
                 max_organisms: 180,
                 nutrient_regen_mult: 1.08,
                 metabolic_cost_mult: 0.94,
@@ -159,8 +173,10 @@ impl UniversePreset {
             },
             Self::AlienGarden => UniverseConfig {
                 preset: self,
-                initial_organisms: 40,
-                max_organisms: 180,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 52,
+                max_organisms: 200,
                 nutrient_regen_mult: 1.42,
                 metabolic_cost_mult: 0.85,
                 mutation_rate: 0.050,
@@ -171,8 +187,10 @@ impl UniversePreset {
             },
             Self::EvolutionaryArena => UniverseConfig {
                 preset: self,
-                initial_organisms: 56,
-                max_organisms: 240,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 68,
+                max_organisms: 260,
                 nutrient_regen_mult: 0.95,
                 metabolic_cost_mult: 1.12,
                 mutation_rate: 0.070,
@@ -183,8 +201,10 @@ impl UniversePreset {
             },
             Self::ExtinctionProtocol => UniverseConfig {
                 preset: self,
-                initial_organisms: 52,
-                max_organisms: 200,
+                world_width: 20.0,
+                world_height: 11.25,
+                initial_organisms: 60,
+                max_organisms: 220,
                 nutrient_regen_mult: 1.10,
                 metabolic_cost_mult: 1.04,
                 mutation_rate: 0.085,
@@ -195,8 +215,10 @@ impl UniversePreset {
             },
             Self::MathematicalAnomaly => UniverseConfig {
                 preset: self,
-                initial_organisms: 38,
-                max_organisms: 160,
+                world_width: 16.0,
+                world_height: 9.0,
+                initial_organisms: 44,
+                max_organisms: 180,
                 nutrient_regen_mult: 1.15,
                 metabolic_cost_mult: 0.95,
                 mutation_rate: 0.115,
@@ -207,8 +229,10 @@ impl UniversePreset {
             },
             Self::SandboxLaboratory => UniverseConfig {
                 preset: self,
-                initial_organisms: 36,
-                max_organisms: 160,
+                world_width: 16.0,
+                world_height: 9.0,
+                initial_organisms: 44,
+                max_organisms: 180,
                 nutrient_regen_mult: 1.05,
                 metabolic_cost_mult: 0.98,
                 mutation_rate: 0.060,
@@ -217,13 +241,27 @@ impl UniversePreset {
                 catastrophe_interval: 0,
                 anomaly_twist_boost: 0.0,
             },
-        }
+        };
+        cfg.world_width = cfg.world_width.clamp(8.0, 64.0);
+        cfg.world_height = cfg.world_height.clamp(4.5, 36.0);
+        cfg
     }
+}
+
+fn default_world_w() -> f32 {
+    16.0
+}
+fn default_world_h() -> f32 {
+    9.0
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct UniverseConfig {
     pub preset: UniversePreset,
+    #[serde(default = "default_world_w")]
+    pub world_width: f32,
+    #[serde(default = "default_world_h")]
+    pub world_height: f32,
     pub initial_organisms: usize,
     pub max_organisms: usize,
     pub nutrient_regen_mult: f32,

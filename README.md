@@ -7,24 +7,24 @@
 **An experimental artificial biosphere where developmental genetics becomes procedural anatomy, evolving neural graphs become behavior, and ecosystems write their own evolutionary history.**<br>
 Built in native Rust, Rayon, `wgpu` 24 / WGSL, and `egui` 0.31 — uniting procedural organ biology, NEAT-inspired neural evolution, and continuous multichannel Lenia cellular automata.
 
-[![Release](https://img.shields.io/badge/release-v0.4.0_GENOMORPH-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.4.0)
+[![Release](https://img.shields.io/badge/release-v0.5.0_INFINITY-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.5.0)
 [![CI](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/actions/workflows/ci.yml/badge.svg)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/engine-Rust_2021-FBBF24?style=flat-square&labelColor=050810)](Cargo.toml)
 [![GPU](https://img.shields.io/badge/GPU-wgpu_24_%2F_WGSL-A78BFA?style=flat-square&labelColor=050810)](src/convergence/gpu_compute.rs)
 [![UI](https://img.shields.io/badge/observatory-egui_0.31-38BDF8?style=flat-square&labelColor=050810)](src/convergence/observatory.rs)
 [![License](https://img.shields.io/badge/license-MIT-34D399?style=flat-square&labelColor=050810)](LICENSE)
 
-[![Windows Native](https://img.shields.io/badge/Windows-x64_Executable_%2B_SHA256-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.4.0)
-[![Automated Tests](https://img.shields.io/badge/tests-6_passing_in_CI_(Exp_A--J)-F472B6?style=flat-square&labelColor=050810)](src/convergence/experiments.rs)
+[![Windows Native](https://img.shields.io/badge/Windows-x64_Executable_%2B_SHA256-38F9D7?style=flat-square&labelColor=050810)](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.5.0)
+[![Automated Tests](https://img.shields.io/badge/tests-7_passing_in_CI_(Exp_A--K)-F472B6?style=flat-square&labelColor=050810)](src/convergence/experiments.rs)
 [![CPU Fallback](https://img.shields.io/badge/CPU_fallback-Rayon_%2F_no--gpu-34D399?style=flat-square&labelColor=050810)](docs/ARCHITECTURE.md)
-[![Persistence](https://img.shields.io/badge/worlds-Atomic_v3_JSON-A78BFA?style=flat-square&labelColor=050810)](src/convergence/persistence.rs)
+[![Persistence](https://img.shields.io/badge/worlds-Atomic_v4_JSON-A78BFA?style=flat-square&labelColor=050810)](src/convergence/persistence.rs)
 
 [**Overview**](#overview) · [**Download**](#download) · [**Observatory**](#observatory) · [**GENOMORPH**](#genomorph) · [**Subsystems**](#subsystems) · [**Universes**](#universes) · [**Architecture**](#architecture) · [**Benchmarks**](#benchmarks) · [**Roadmap**](#roadmap)
 
 </div>
 
 > [!NOTE]
-> **Scientific Scope & Transparency:** Abiogenesis is an experimental artificial-life research environment, not a conventional game. Every organism couples a hierarchical developmental genome (`GenomorphGenome`) and articulated functional anatomy (`AnatomyPhenotype`) with a `40×40×3` continuous Lenia cellular body (`LeniaBody`) and a NEAT-inspired `NeuralGraph` inside a toroidal `128×128×4` reaction-diffusion environment (`EcoField`). In v0.4.0, `EcoField` compute and full anatomy + Lenia visualization run on the GPU via `wgpu`/WGSL, while localized cellular bodies, `NeuralGraph` evaluation, and spatial hashing execute in parallel on the CPU via Rayon. See [docs/RESEARCH_GENOMORPH.md](docs/RESEARCH_GENOMORPH.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> **Scientific Scope & Transparency:** Abiogenesis is an experimental artificial-life research environment, not a conventional game. Every organism couples a hierarchical developmental genome (`GenomorphGenome`) and articulated functional anatomy (`AnatomyPhenotype`) with a `40×40×3` continuous Lenia cellular body (`LeniaBody`) and a NEAT-inspired `NeuralGraph` inside an expansive, non-repeating widescreen multi-biome biosphere (`16×9` to `24×13.5` world units, `256×144×4` `EcoField`). In v0.5.0 (Project INFINITY), `EcoField` compute and non-tiling anatomy + Lenia visualization run on the GPU via `wgpu`/WGSL with CPU frustum culling and an interactive navigable minimap, while localized cellular bodies, `NeuralGraph` evaluation, and spatial hashing execute in parallel on the CPU via Rayon. See [docs/RESEARCH_GENOMORPH.md](docs/RESEARCH_GENOMORPH.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -45,9 +45,9 @@ Every organism is a simulated biological individual:
 ## Download & Quick Start
 
 ### Windows Native Executable (Recommended)
-1. Download **[`symbiote-abiogenesis-v0.4.0-windows-x86_64.exe`](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.4.0/symbiote-abiogenesis-v0.4.0-windows-x86_64.exe)** and its **[SHA-256 checksum](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.4.0/symbiote-abiogenesis-v0.4.0-windows-x86_64.exe.sha256)** from the [v0.4.0 Project GENOMORPH Release](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.4.0).
-2. Double-click the executable to launch the native **GENOMORPH Research Laboratory** immediately.
-3. Click any organism to inspect its procedural anatomy, live `NeuralGraph` activations, and parent-offspring homology diff. Press **`F11`** or **`Alt+Enter`** for borderless fullscreen, or **`H`** for distraction-free **Cinematic Mode**.
+1. Download **[`symbiote-abiogenesis-v0.5.0-windows-x86_64.exe`](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.5.0/symbiote-abiogenesis-v0.5.0-windows-x86_64.exe)** and its **[SHA-256 checksum](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/download/v0.5.0/symbiote-abiogenesis-v0.5.0-windows-x86_64.exe.sha256)** from the [v0.5.0 Project INFINITY Release](https://github.com/ShamelesAbyss/Symbiote-Abiogenesis/releases/tag/v0.5.0).
+2. Double-click the executable to launch the native **INFINITY Research Laboratory** immediately.
+3. Scroll to zoom at the cursor, click or drag the **World Minimap** to navigate, click any organism to inspect its procedural anatomy and live `NeuralGraph`, press **`0`** to fit the entire world cleanly, **`F11`** / **`Alt+Enter`** for borderless fullscreen, or **`H`** for distraction-free **Cinematic Mode**.
 
 ### Build from Source (Windows / Linux · Rust 1.80+)
 ```bash

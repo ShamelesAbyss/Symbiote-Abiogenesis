@@ -1,11 +1,12 @@
-//! Headless high-resolution PNG screenshot renderer for Symbiote: Abiogenesis — GENOMORPH.
+//! Headless high-resolution PNG screenshot renderer for Symbiote: Abiogenesis v0.5.0 — Project INFINITY.
 //!
-//! Renders the toroidal abyssal EcoField, smooth 40x40x3 continuous Lenia bodies,
-//! AND each organism's articulated procedural anatomy (segments, oscillating fins,
-//! undulating tails, predatory jaws, filter veils, sensory antennae, armor carapaces).
+//! Uses `SimCamera` + `WorldBounds` with strict `[0, world_w] x [0, world_h]` boundary clipping
+//! so full-world overview NEVER repeats or tiles the ecosystem. Renders the 256x144 multi-biome
+//! EcoField, smooth 40x40x3 continuous Lenia bodies, and articulated procedural anatomy.
 
+use crate::convergence::camera::{SimCamera, WorldBounds};
 use crate::convergence::eco_field::{ECO_CHANNELS, ECO_HEIGHT, ECO_WIDTH};
-use crate::convergence::engine::{toroidal_delta, ConvergenceWorld};
+use crate::convergence::engine::ConvergenceWorld;
 use crate::convergence::genomorph::OrganKind;
 use crate::convergence::lenia_body::{BODY_CHANNELS, BODY_RES};
 use anyhow::Result;
@@ -22,13 +23,12 @@ pub fn capture_showcase_screenshots(prefer_gpu: bool) -> Result<()> {
         world.step();
     }
 
-    render_png(
+    let overview_cam = SimCamera::fit_world(world.bounds, 1440.0 / 810.0);
+    render_png_with_camera(
         &world,
         1440,
         810,
-        0.0,
-        0.0,
-        1.82,
+        overview_cam,
         Path::new("assets/screenshots/ecosystem_overview.png"),
     )?;
 
@@ -42,15 +42,19 @@ pub fn capture_showcase_screenshots(prefer_gpu: bool) -> Result<()> {
             sa.total_cmp(&sb)
         })
         .map(|o| (o.x, o.y))
-        .unwrap_or((0.0, 0.0));
+        .unwrap_or((world.bounds.width * 0.5, world.bounds.height * 0.5));
 
-    render_png(
+    let micro_cam = SimCamera {
+        center_x: fx,
+        center_y: fy,
+        half_h: 0.95,
+        show_bounds: false,
+    };
+    render_png_with_camera(
         &world,
         1440,
         810,
-        fx,
-        fy,
-        6.2,
+        micro_cam,
         Path::new("assets/screenshots/microscopic_cells.png"),
     )?;
 
@@ -58,61 +62,95 @@ pub fn capture_showcase_screenshots(prefer_gpu: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn render_png(
+pub fn render_png_with_camera(
     world: &ConvergenceWorld,
     width: u32,
     height: u32,
-    center_x: f32,
-    center_y: f32,
-    zoom: f32,
+    camera: SimCamera,
     path: &Path,
 ) -> Result<()> {
     let w = width as usize;
     let h = height as usize;
-    let aspect = width as f32 / height.max(1) as f32;
+    let wf = width.max(1) as f32;
+    let hf = height.max(1) as f32;
+    let aspect = wf / hf;
+    let bounds = world.bounds;
     let mut rgb = vec![0u8; w * h * 3];
 
+    // Pre-cull visible organisms once for fast high-res rendering
+    let visible_orgs: Vec<usize> = world
+        .organisms
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, org)| {
+            let radius = organism_visual_radius(org);
+            if camera.is_visible(org.x, org.y, radius * 1.85, bounds, aspect) {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .collect();
+
     rgb.par_chunks_mut(w * 3).enumerate().for_each(|(py, row)| {
-        let v = py as f32 / height as f32;
+        let v = py as f32 / hf;
         let ndc_y = (v - 0.5) * 2.0;
-        let wy = center_y + ndc_y / zoom;
 
         for px in 0..w {
-            let u = px as f32 / width as f32;
+            let u = px as f32 / wf;
             let ndc_x = (u - 0.5) * 2.0;
-            let wx = center_x + (ndc_x * aspect) / zoom;
+            let (wx, wy) = camera.screen_to_world(px as f32, py as f32, wf, hf);
 
-            let vig = (1.0 - 0.24 * (ndc_x * ndc_x * 0.45 + ndc_y * ndc_y)).clamp(0.55, 1.0);
+            // Strict world-boundary clipping: deep outer void outside [0, width] x [0, height]
+            if !bounds.contains(wx, wy) {
+                let mut void_col = [0.002f32, 0.003, 0.007];
+                if camera.show_bounds {
+                    let edge_dx = (-wx).max(wx - bounds.width).max(0.0);
+                    let edge_dy = (-wy).max(wy - bounds.height).max(0.0);
+                    let edge_d = (edge_dx * edge_dx + edge_dy * edge_dy).sqrt();
+                    let px_size = (2.0 * camera.half_h) / hf;
+                    let glow = (-edge_d / (px_size * 5.0).max(0.008)).exp() * 0.22;
+                    void_col[0] += 0.06 * glow;
+                    void_col[1] += 0.34 * glow;
+                    void_col[2] += 0.42 * glow;
+                }
+                for c in 0..3 {
+                    let mapped = aces_tonemap(void_col[c]);
+                    row[px * 3 + c] = (mapped * 255.0) as u8;
+                }
+                continue;
+            }
+
+            let vig = (1.0 - 0.22 * (ndc_x * ndc_x * 0.45 + ndc_y * ndc_y)).clamp(0.58, 1.0);
             let mut col = [0.003 * vig, 0.005 * vig, 0.011 * vig];
 
-            let e = sample_eco_smooth(&world.eco_field.cells, wx, wy);
-            let nutr_wisp = (e[0] - 0.36).max(0.0).powf(2.2);
+            let e = sample_eco_smooth(&world.eco_field.cells, bounds, wx, wy);
+            let nutr_wisp = (e[0] - 0.34).max(0.0).powf(2.1);
             let pher_wisp = e[1].powf(1.5);
             let tox_wisp = e[2].powf(1.6);
-            let root_fil = e[3].powf(2.4);
+            let root_fil = e[3].powf(2.3);
 
             col[0] += 0.008 * nutr_wisp + 0.14 * pher_wisp + 0.42 * tox_wisp + 0.03 * root_fil;
             col[1] += 0.055 * nutr_wisp + 0.05 * pher_wisp + 0.05 * tox_wisp + 0.14 * root_fil;
             col[2] += 0.085 * nutr_wisp + 0.26 * pher_wisp + 0.09 * tox_wisp + 0.28 * root_fil;
 
-            let h_speck = hash2d((wx * 42.0).floor() as i32, (wy * 42.0).floor() as i32);
+            let h_speck = hash2d((wx * 12.0).floor() as i32, (wy * 12.0).floor() as i32);
             if h_speck > 0.992 {
-                let fx_s = (wx * 42.0).fract() - 0.5;
-                let fy_s = (wy * 42.0).fract() - 0.5;
+                let fx_s = (wx * 12.0).fract() - 0.5;
+                let fy_s = (wy * 12.0).fract() - 0.5;
                 let d_s = (fx_s * fx_s + fy_s * fy_s).sqrt();
-                let glow = (1.0 - d_s * 5.0).max(0.0).powi(2) * 0.18;
+                let glow = (1.0 - d_s * 5.0).max(0.0).powi(2) * 0.16;
                 col[0] += glow * 0.4;
                 col[1] += glow * 0.8;
                 col[2] += glow * 1.1;
             }
 
-            for org in &world.organisms {
-                let radius = (0.055 + org.body.metrics.radius_norm * 0.058)
-                    * (0.45 + org.maturity * 0.55)
-                    * org.genomorph.base_scale;
+            for &org_idx in &visible_orgs {
+                let org = &world.organisms[org_idx];
+                let radius = organism_visual_radius(org);
                 let bound_r = radius * 1.75;
-                let dx = toroidal_delta(wx - org.x);
-                let dy = toroidal_delta(wy - org.y);
+                let dx = bounds.delta_x(wx - org.x);
+                let dy = bounds.delta_y(wy - org.y);
                 if dx.abs() > bound_r || dy.abs() > bound_r {
                     continue;
                 }
@@ -132,7 +170,6 @@ pub fn render_png(
                     1.45,
                 );
 
-                // Soft ambient bioluminescent halo
                 let dist_norm = (dx * dx + dy * dy).sqrt() / bound_r;
                 if dist_norm < 1.0 {
                     let halo =
@@ -165,7 +202,7 @@ pub fn render_png(
                     }
                 }
 
-                // 2. Articulated procedural anatomy organs (rotated by organism heading)
+                // 2. Articulated procedural anatomy organs
                 let cos_h = org.body.heading.cos();
                 let sin_h = org.body.heading.sin();
                 let lx = (dx * cos_h + dy * sin_h) / radius;
@@ -202,11 +239,19 @@ pub fn render_png(
                 }
             }
 
+            // Subtle inner world boundary hairline
+            if camera.show_bounds {
+                let px_size = (2.0 * camera.half_h) / hf;
+                let border = wx.min(bounds.width - wx).min(wy.min(bounds.height - wy));
+                if border < px_size * 1.6 {
+                    col[0] += 0.08;
+                    col[1] += 0.34;
+                    col[2] += 0.42;
+                }
+            }
+
             for c in 0..3 {
-                let x = col[c].max(0.0);
-                let mapped = ((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
-                    .powf(0.92)
-                    .clamp(0.0, 1.0);
+                let mapped = aces_tonemap(col[c]);
                 row[px * 3 + c] = (mapped * 255.0) as u8;
             }
         }
@@ -220,6 +265,21 @@ pub fn render_png(
     let mut writer = encoder.write_header()?;
     writer.write_image_data(&rgb)?;
     Ok(())
+}
+
+#[inline]
+pub fn organism_visual_radius(org: &crate::convergence::engine::MorphOrganism) -> f32 {
+    (0.16 + org.body.metrics.radius_norm * 0.20)
+        * (0.45 + org.maturity * 0.55)
+        * org.genomorph.base_scale
+}
+
+#[inline]
+fn aces_tonemap(val: f32) -> f32 {
+    let x = val.max(0.0);
+    ((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
+        .powf(0.92)
+        .clamp(0.0, 1.0)
 }
 
 #[inline]
@@ -248,9 +308,9 @@ fn hash2d(x: i32, y: i32) -> f32 {
     u as f32 / 16_777_215.0
 }
 
-fn sample_eco_smooth(cells: &[f32], wx: f32, wy: f32) -> [f32; 4] {
-    let u = ((wx + 1.0) * 0.5).rem_euclid(1.0) * ECO_WIDTH as f32;
-    let v = ((wy + 1.0) * 0.5).rem_euclid(1.0) * ECO_HEIGHT as f32;
+fn sample_eco_smooth(cells: &[f32], bounds: WorldBounds, wx: f32, wy: f32) -> [f32; 4] {
+    let u = (wx / bounds.width).clamp(0.0, 0.9999) * ECO_WIDTH as f32;
+    let v = (wy / bounds.height).clamp(0.0, 0.9999) * ECO_HEIGHT as f32;
     let x0 = (u.floor() as usize) % ECO_WIDTH;
     let y0 = (v.floor() as usize) % ECO_HEIGHT;
     let x1 = (x0 + 1) % ECO_WIDTH;
@@ -295,7 +355,7 @@ fn sample_body_hermite(cells: &[f32], lu: f32, lv: f32) -> (f32, f32, f32) {
     (out[0], out[1], out[2])
 }
 
-fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
+pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
     let c = v * s;
     let hp = h.rem_euclid(1.0) * 6.0;
     let x = c * (1.0 - ((hp % 2.0) - 1.0).abs());

@@ -316,7 +316,7 @@ mod tests {
         assert!(body.cells.iter().all(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0));
     }
 
-    /// Experiment I & J: Persistent Evolution (v3 Atomic Save/Load) & Multi-Tick Stability.
+    /// Experiment I & J: Persistent Evolution (v4 Atomic Save/Load) & Multi-Tick Stability.
     #[test]
     fn exp_ij_persistent_evolution_and_stability() {
         let mut world =
@@ -324,10 +324,16 @@ mod tests {
         for _ in 0..30 {
             world.step();
         }
-        assert!(world.organisms.iter().all(|o| o.energy.is_finite() && o.x.is_finite()));
-        let path = save_world_atomic(&world, "unit_test_genomorph_v3").expect("save failed");
+        assert!(world.organisms.iter().all(|o| {
+            o.energy.is_finite()
+                && o.x.is_finite()
+                && o.y.is_finite()
+                && world.bounds.contains(o.x, o.y)
+        }));
+        let path = save_world_atomic(&world, "unit_test_infinity_v4").expect("save failed");
         let restored = load_world(&path, false).expect("load failed");
         assert_eq!(restored.tick, world.tick);
+        assert_eq!(restored.bounds, world.bounds);
         assert_eq!(restored.organisms.len(), world.organisms.len());
         assert_eq!(restored.universe.preset, UniversePreset::GenesisZero);
         if let (Some(a), Some(b)) = (world.organisms.first(), restored.organisms.first()) {
@@ -336,5 +342,55 @@ mod tests {
             assert_eq!(a.genomorph.genes[0].kind, OrganKind::CoreSegment);
         }
         let _ = std::fs::remove_file(path);
+    }
+
+    /// Project INFINITY: Camera projection, cursor-centered zoom, aspect-ratio fit_world,
+    /// toroidal delta symmetry, and frustum culling invariants.
+    #[test]
+    fn exp_k_infinity_camera_and_world_bounds() {
+        use crate::convergence::camera::{SimCamera, WorldBounds};
+
+        let bounds = WorldBounds::new(16.0, 9.0);
+        // 1. Toroidal wrap & shortest signed delta symmetry
+        assert!((bounds.wrap_x(-0.25) - 15.75).abs() < 1e-5);
+        assert!((bounds.wrap_y(9.5) - 0.5).abs() < 1e-5);
+        assert!((bounds.delta_x(15.5) - (-0.5)).abs() < 1e-5);
+        assert!((bounds.delta_x(-15.5) - 0.5).abs() < 1e-5);
+        assert!((bounds.delta_y(8.5) - (-0.5)).abs() < 1e-5);
+
+        // 2. fit_world shows entire world without cropping across 16:9, 21:9, and 4:3
+        for aspect in [16.0 / 9.0, 21.0 / 9.0, 4.0 / 3.0] {
+            let cam = SimCamera::fit_world(bounds, aspect);
+            let (min_x, min_y, max_x, max_y) = cam.visible_rect(aspect);
+            assert!(min_x <= 0.0 && max_x >= bounds.width);
+            assert!(min_y <= 0.0 && max_y >= bounds.height);
+        }
+
+        // 3. screen_to_world <-> world_to_uv roundtrip
+        let mut cam = SimCamera::fit_world(bounds, 16.0 / 9.0);
+        let (wx, wy) = cam.screen_to_world(480.0, 270.0, 1440.0, 810.0);
+        let (u, v) = cam.world_to_uv(wx, wy, 1440.0 / 810.0);
+        assert!((u - (480.0 / 1440.0)).abs() < 1e-4);
+        assert!((v - (270.0 / 810.0)).abs() < 1e-4);
+
+        // 4. Cursor-centered zoom keeps target point stable when zoomed in
+        cam.half_h = 2.0;
+        cam.center_x = 8.0;
+        cam.center_y = 4.5;
+        let (before_x, before_y) = cam.screen_to_world(900.0, 320.0, 1440.0, 810.0);
+        cam.zoom_at_cursor(1.5, 900.0, 320.0, 1440.0, 810.0, bounds);
+        let (after_x, after_y) = cam.screen_to_world(900.0, 320.0, 1440.0, 810.0);
+        assert!((before_x - after_x).abs() < 1e-3);
+        assert!((before_y - after_y).abs() < 1e-3);
+
+        // 5. Frustum culling excludes distant off-screen organisms
+        let micro = SimCamera {
+            center_x: 8.0,
+            center_y: 4.5,
+            half_h: 0.8,
+            show_bounds: true,
+        };
+        assert!(micro.is_visible(8.1, 4.4, 0.3, bounds, 16.0 / 9.0));
+        assert!(!micro.is_visible(1.0, 1.0, 0.3, bounds, 16.0 / 9.0));
     }
 }

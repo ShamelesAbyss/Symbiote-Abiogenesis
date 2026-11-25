@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const SAVE_VERSION: u32 = 3;
+pub const SAVE_VERSION: u32 = 4;
 pub const WORLDS_DIR: &str = "saves/worlds";
 const MAX_SAVE_BYTES: usize = 64 * 1024 * 1024;
 

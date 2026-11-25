@@ -1,8 +1,8 @@
 [package]
 name = "symbiote-abiogenesis"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
-description = "Symbiote: Abiogenesis v0.4.0 (Project GENOMORPH) — Procedural heritable anatomy, NEAT neural evolution, multichannel Lenia morphology, and GPU bioluminescent research observatory."
+description = "Symbiote: Abiogenesis v0.5.0 (Project INFINITY) — Expansive non-repeating biosphere, aspect-aware SimCamera & minimap, procedural heritable anatomy, NEAT neural evolution, and multichannel Lenia morphology."
 
 [features]
 default = ["gpu", "observatory"]
