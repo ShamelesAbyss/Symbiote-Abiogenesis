@@ -1,12 +1,23 @@
 [package]
 name = "symbiote"
-version = "0.21.0"
+version = "0.22.0"
 edition = "2021"
+description = "Symbiote: Project Abiogenesis — Convergence of continuous cellular morphology and adaptive artificial ecology."
+
+[features]
+default = ["gpu", "observatory"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+observatory = ["gpu", "dep:winit"]
 
 [dependencies]
 anyhow = "1"
 crossterm = "0.27"
 ratatui = "0.26"
 rand = "0.8"
+rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+wgpu = { version = "24", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+winit = { version = "0.30", optional = true }

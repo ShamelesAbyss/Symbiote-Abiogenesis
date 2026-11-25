@@ -1,6 +1,7 @@
 mod app;
 mod automata;
 mod cluster;
+mod convergence;
 mod density;
 mod ecology;
 mod field;
@@ -23,11 +24,32 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
-    io,
+    env, io,
     time::{Duration, Instant},
 };
 
 fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    let force_cpu = args.iter().any(|a| a == "--cpu");
+
+    if args.iter().any(|a| a == "--experiment" || a == "--validate") {
+        convergence::experiments::run_all_experiments(!force_cpu);
+        return Ok(());
+    }
+
+    if args.iter().any(|a| a == "--observatory" || a == "--gpu") {
+        #[cfg(feature = "observatory")]
+        {
+            return convergence::observatory::run_observatory(!force_cpu);
+        }
+        #[cfg(not(feature = "observatory"))]
+        {
+            eprintln!("Observatory feature not enabled. Rebuild with default features (--features observatory).");
+            return Ok(());
+        }
+    }
+
+    // Default: preserve the original functional Symbiote TUI simulation
     let _ = pattern::bootstrap_pattern_layer(0);
 
     enable_raw_mode()?;

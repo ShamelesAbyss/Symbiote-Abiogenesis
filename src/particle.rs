@@ -84,7 +84,7 @@ impl RareTrait {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Genome {
     pub perception: f32,
     pub hunger: f32,
