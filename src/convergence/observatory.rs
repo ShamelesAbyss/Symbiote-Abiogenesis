@@ -1,17 +1,20 @@
-//! Symbiote: Abiogenesis — Professional Graphical Research Laboratory.
+//! Symbiote: Abiogenesis — Project Bioluminescence Research Laboratory.
 //!
-//! Combines a 3-channel fluorescence-microscopy WGSL renderer with an interactive
-//! `egui` scientific interface: Universe presets, live telemetry, click-to-inspect
-//! microscopic organism tracking, MAP-Elites discovery archive, atomic world
-//! persistence, and distraction-free Cinematic Mode (`H`).
+//! Features:
+//! - Deep near-black abyssal WGSL fluorescence-microscopy shader with Hermite-smoothed
+//!   40x40x3 continuous Lenia bodies, refractive membranes, luminous organelles,
+//!   soft controlled bloom, and seamless toroidal world wrapping.
+//! - Custom obsidian-glass scientific laboratory `egui` theme with live sparklines,
+//!   microscopic organism tracking, MAP-Elites discovery archive, and Cinematic Mode (`H`).
 
 use crate::convergence::eco_field::{ECO_HEIGHT, ECO_WIDTH};
-use crate::convergence::engine::{ConvergenceWorld, MAX_ORGANISMS_BUFFER};
+use crate::convergence::engine::{toroidal_delta, ConvergenceWorld, MAX_ORGANISMS_BUFFER};
 use crate::convergence::lenia_body::{BODY_CHANNELS, BODY_RES};
 use crate::convergence::persistence::{load_world, save_world_atomic};
 use crate::convergence::snapshot::render_png;
 use crate::convergence::universes::UniversePreset;
 use anyhow::Result;
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -50,7 +53,7 @@ struct GpuOrganismMeta {
     accent_shift: f32,
     energy_norm: f32,
     pulse: f32,
-    _pad: f32,
+    mass: f32,
 }
 
 pub fn run_observatory(prefer_gpu_compute: bool) -> Result<()> {
@@ -94,6 +97,8 @@ struct ObservatoryApp {
     selected_preset: UniversePreset,
     status_toast: String,
     cursor_pos: (f32, f32),
+    pop_history: VecDeque<f32>,
+    nutr_history: VecDeque<f32>,
     start_time: Instant,
     last_fps_update: Instant,
     frame_count: u32,
@@ -113,7 +118,7 @@ impl ObservatoryApp {
             gpu: None,
             cam_x: 0.0,
             cam_y: 0.0,
-            cam_zoom: 1.0,
+            cam_zoom: 1.80,
             paused: false,
             single_step: false,
             steps_per_frame: 1,
@@ -121,8 +126,10 @@ impl ObservatoryApp {
             selected_org_id: None,
             track_selected: false,
             selected_preset: UniversePreset::PrimordialOcean,
-            status_toast: "Ready — Click any organism to inspect".to_string(),
+            status_toast: "Click any organism to inspect · Press H for Cinematic Mode".to_string(),
             cursor_pos: (0.0, 0.0),
+            pop_history: VecDeque::with_capacity(120),
+            nutr_history: VecDeque::with_capacity(120),
             start_time: Instant::now(),
             last_fps_update: Instant::now(),
             frame_count: 0,
@@ -146,7 +153,7 @@ impl ObservatoryApp {
 
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("Symbiote Abiogenesis Observatory Device"),
+                label: Some("Symbiote Abiogenesis Bioluminescence Device"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::Performance,
@@ -187,9 +194,8 @@ impl ObservatoryApp {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        // 3 channels packed into vec4<f32> (cyto, mem, organ, 0.0) for 16-byte WGSL alignment
         let org_bodies_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Organism 3ch Lenia Bodies Buffer"),
+            label: Some("Organism 40x40x3 Lenia Bodies Buffer"),
             size: (MAX_ORGANISMS_BUFFER * BODY_RES * BODY_RES * 4 * std::mem::size_of::<f32>())
                 as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
@@ -239,7 +245,7 @@ impl ObservatoryApp {
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Observatory 3ch Bioluminescent Shader"),
+            label: Some("Observatory Bioluminescence Shader"),
             source: wgpu::ShaderSource::Wgsl(OBSERVATORY_WGSL.into()),
         });
 
@@ -276,6 +282,7 @@ impl ObservatoryApp {
         });
 
         let egui_ctx = egui::Context::default();
+        configure_laboratory_theme(&egui_ctx);
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
             egui::ViewportId::ROOT,
@@ -317,8 +324,10 @@ impl ObservatoryApp {
 
         let mut best: Option<(u64, f32)> = None;
         for org in &self.world.organisms {
-            let d = ((org.x - wx).powi(2) + (org.y - wy).powi(2)).sqrt();
-            let r = 0.065 + org.body.metrics.radius_norm * 0.055;
+            let dx = toroidal_delta(org.x - wx);
+            let dy = toroidal_delta(org.y - wy);
+            let d = (dx * dx + dy * dy).sqrt();
+            let r = 0.075 + org.body.metrics.radius_norm * 0.085;
             if d <= r && best.map(|(_, bd)| d < bd).unwrap_or(true) {
                 best = Some((org.id, d));
             }
@@ -339,12 +348,20 @@ impl ObservatoryApp {
             self.single_step = false;
         }
 
-        // Smooth camera tracking when inspecting an organism
+        if self.world.tick % 4 == 0 {
+            if self.pop_history.len() >= 120 {
+                self.pop_history.pop_front();
+                self.nutr_history.pop_front();
+            }
+            self.pop_history.push_back(self.world.organisms.len() as f32);
+            self.nutr_history.push_back(self.world.eco_field.mean_nutrient());
+        }
+
         if self.track_selected {
             if let Some(id) = self.selected_org_id {
                 if let Some(org) = self.world.organisms.iter().find(|o| o.id == id) {
-                    self.cam_x += (org.x - self.cam_x) * 0.18;
-                    self.cam_y += (org.y - self.cam_y) * 0.18;
+                    self.cam_x += toroidal_delta(org.x - self.cam_x) * 0.16;
+                    self.cam_y += toroidal_delta(org.y - self.cam_y) * 0.16;
                 }
             }
         }
@@ -395,12 +412,12 @@ impl ObservatoryApp {
             metas.push(GpuOrganismMeta {
                 x: org.x,
                 y: org.y,
-                radius: 0.055 + org.body.metrics.radius_norm * 0.055,
+                radius: 0.075 + org.body.metrics.radius_norm * 0.085,
                 hue: org.morph_genome.biolum_hue,
                 accent_shift: org.morph_genome.accent_shift,
-                energy_norm: (org.energy / 100.0).clamp(0.15, 1.35),
+                energy_norm: (org.energy / 90.0).clamp(0.25, 1.35),
                 pulse: org.body.pulse_phase,
-                _pad: 0.0,
+                mass: org.body.metrics.mass,
             });
             for chunk in org.body.cells.chunks_exact(BODY_CHANNELS) {
                 bodies_rgba.push(chunk[0]);
@@ -416,7 +433,6 @@ impl ObservatoryApp {
                 .write_buffer(&gpu.org_bodies_buf, 0, bytemuck::cast_slice(&bodies_rgba));
         }
 
-        // Build egui Research Laboratory UI
         let raw_input = gpu.egui_state.take_egui_input(&win);
         let stats = self.world.stats();
         let mut action_new_universe: Option<UniversePreset> = None;
@@ -426,30 +442,73 @@ impl ObservatoryApp {
 
         let full_output = gpu.egui_ctx.run(raw_input, |ctx| {
             if self.cinematic_mode {
+                egui::Area::new(egui::Id::new("cinematic_pill"))
+                    .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(18.0, -18.0))
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(egui::Color32::from_rgba_unmultiplied(6, 10, 18, 170))
+                            .stroke(egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgba_unmultiplied(56, 189, 248, 55),
+                            ))
+                            .corner_radius(egui::CornerRadius::same(14))
+                            .inner_margin(egui::Margin::symmetric(14, 7))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("◉ ABIOGENESIS")
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(103, 232, 249)),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "· {} orgs · Gen {} · Press H for Lab UI",
+                                            stats.organism_count, stats.max_generation
+                                        ))
+                                        .small()
+                                        .color(egui::Color32::from_rgb(160, 185, 210)),
+                                    );
+                                });
+                            });
+                    });
                 return;
             }
 
-            // Left Panel: Universe Laboratory & Simulation Controls
+            let panel_frame = egui::Frame::side_top_panel(&ctx.style())
+                .fill(egui::Color32::from_rgba_unmultiplied(7, 11, 19, 228))
+                .stroke(egui::Stroke::new(
+                    1.0,
+                    egui::Color32::from_rgba_unmultiplied(56, 189, 248, 38),
+                ))
+                .inner_margin(egui::Margin::same(14));
+
+            // Left Panel: Obsidian-Glass Research Laboratory Controls & Live Sparklines
             egui::SidePanel::left("lab_controls")
-                .default_width(250.0)
+                .default_width(276.0)
                 .resizable(true)
+                .frame(panel_frame)
                 .show(ctx, |ui| {
-                    ui.heading("◉ ABIOGENESIS LAB");
+                    ui.label(
+                        egui::RichText::new("◉ SYMBIOTE: ABIOGENESIS")
+                            .size(15.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(103, 232, 249)),
+                    );
                     ui.label(
                         egui::RichText::new(format!(
-                            "{:.0} FPS · {} · Tick {}",
+                            "{:.0} FPS  ·  {}  ·  Tick {}",
                             self.current_fps,
-                            if stats.gpu_active { "GPU+Rayon" } else { "CPU-Rayon" },
+                            if stats.gpu_active { "RTX GPU + Rayon" } else { "CPU-Rayon" },
                             stats.tick
                         ))
                         .small()
-                        .color(egui::Color32::from_rgb(120, 210, 220)),
+                        .color(egui::Color32::from_rgb(130, 165, 195)),
                     );
-                    ui.separator();
+                    ui.add_space(8.0);
 
                     ui.horizontal(|ui| {
                         if ui
-                            .button(if self.paused { "▶ Play" } else { "⏸ Pause" })
+                            .button(if self.paused { "▶ Resume" } else { "⏸ Pause" })
                             .clicked()
                         {
                             self.paused = !self.paused;
@@ -458,29 +517,38 @@ impl ObservatoryApp {
                             self.paused = true;
                             self.single_step = true;
                         }
-                        if ui.button("🎬 Hide UI").clicked() {
+                        if ui.button("🎬 Cinema").clicked() {
                             self.cinematic_mode = true;
                         }
                     });
 
+                    ui.add_space(4.0);
                     ui.add(
-                        egui::Slider::new(&mut self.steps_per_frame, 1..=4).text("Steps/Frame"),
+                        egui::Slider::new(&mut self.steps_per_frame, 1..=4).text("Sim Speed"),
                     );
                     ui.add(
-                        egui::Slider::new(&mut self.cam_zoom, 0.6..=16.0)
+                        egui::Slider::new(&mut self.cam_zoom, 0.7..=16.0)
                             .logarithmic(true)
-                            .text("Zoom"),
+                            .text("Microscope"),
                     );
-                    if ui.button("Reset Camera (0)").clicked() {
+                    if ui.button("⌖ Reset View (0)").clicked() {
                         self.cam_x = 0.0;
                         self.cam_y = 0.0;
-                        self.cam_zoom = 1.0;
+                        self.cam_zoom = 1.15;
                         self.track_selected = false;
                     }
 
+                    ui.add_space(8.0);
                     ui.separator();
-                    ui.strong("Experimental Universe");
+                    ui.label(
+                        egui::RichText::new("EXPERIMENTAL UNIVERSE")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::from_rgb(148, 163, 184)),
+                    );
+                    ui.add_space(3.0);
                     egui::ComboBox::from_id_salt("universe_preset")
+                        .width(235.0)
                         .selected_text(self.selected_preset.name())
                         .show_ui(ui, |ui| {
                             for preset in UniversePreset::ALL {
@@ -494,124 +562,200 @@ impl ObservatoryApp {
                     ui.label(
                         egui::RichText::new(self.selected_preset.description())
                             .small()
-                            .weak(),
+                            .color(egui::Color32::from_rgb(140, 160, 185)),
                     );
-                    if ui.button("🌌 Generate Universe").clicked() {
+                    if ui.button("🌌 Seed Selected Universe").clicked() {
                         action_new_universe = Some(self.selected_preset);
                     }
-
                     ui.checkbox(
                         &mut self.world.universe.allow_abiogenesis,
-                        "Allow Abiogenesis (off = permanent extinction)",
+                        "Allow Abiogenesis (off = perm. extinction)",
                     );
 
+                    ui.add_space(8.0);
                     ui.separator();
-                    ui.strong("Biosphere Telemetry");
-                    ui.label(format!("Organisms: {}", stats.organism_count));
-                    ui.label(format!(
-                        "Active Lineages: {} (Extinct: {})",
-                        stats.active_lineages, stats.extinction_events
-                    ));
-                    ui.label(format!("Max Generation: {}", stats.max_generation));
-                    ui.label(format!(
-                        "Births: {} · Deaths: {} · Predations: {}",
-                        stats.total_births, stats.total_deaths, stats.total_predations
-                    ));
-                    ui.label(format!("Mean Nutrient: {:.3}", stats.mean_nutrient));
-                    ui.label(format!(
-                        "MAP-Elites Archive: {}/36 niches",
-                        stats.archive_discoveries
-                    ));
-
-                    ui.separator();
-                    ui.strong("Persistence & Capture");
+                    ui.label(
+                        egui::RichText::new("LIVE BIOSPHERE TELEMETRY")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::from_rgb(148, 163, 184)),
+                    );
+                    ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        if ui.button("💾 Save World").clicked() {
+                        metric_pill(ui, "ORGS", &format!("{}", stats.organism_count), egui::Color32::from_rgb(56, 189, 248));
+                        metric_pill(ui, "LINEAGES", &format!("{}", stats.active_lineages), egui::Color32::from_rgb(52, 211, 153));
+                        metric_pill(ui, "GEN", &format!("{}", stats.max_generation), egui::Color32::from_rgb(192, 132, 252));
+                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Births {} · Deaths {} · Predations {}",
+                            stats.total_births, stats.total_deaths, stats.total_predations
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(165, 185, 205)),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "MAP-Elites Archive: {}/36 niches · Extinct: {}",
+                            stats.archive_discoveries, stats.extinction_events
+                        ))
+                        .small()
+                        .color(egui::Color32::from_rgb(165, 185, 205)),
+                    );
+
+                    ui.add_space(6.0);
+                    draw_sparkline(
+                        ui,
+                        "Population Dynamics",
+                        &self.pop_history,
+                        egui::Color32::from_rgb(56, 189, 248),
+                    );
+                    ui.add_space(4.0);
+                    draw_sparkline(
+                        ui,
+                        "Mean Ambient Nutrient",
+                        &self.nutr_history,
+                        egui::Color32::from_rgb(52, 211, 153),
+                    );
+
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("💾 Save").clicked() {
                             action_save = true;
                         }
-                        if ui.button("📂 Load World").clicked() {
+                        if ui.button("📂 Load").clicked() {
                             action_load = true;
                         }
+                        if ui.button("📸 PNG").clicked() {
+                            action_screenshot = true;
+                        }
                     });
-                    if ui.button("📸 Capture PNG Screenshot").clicked() {
-                        action_screenshot = true;
-                    }
-                    ui.separator();
-                    ui.label(egui::RichText::new(&self.status_toast).small().italics());
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(&self.status_toast)
+                            .small()
+                            .italics()
+                            .color(egui::Color32::from_rgb(125, 155, 185)),
+                    );
                 });
 
             // Right Panel: Microscopic Organism Inspector & Discovery Archive
             egui::SidePanel::right("inspector_panel")
-                .default_width(250.0)
+                .default_width(276.0)
                 .resizable(true)
+                .frame(panel_frame)
                 .show(ctx, |ui| {
-                    ui.heading("🔬 Microscopic Inspector");
+                    ui.label(
+                        egui::RichText::new("🔬 MICROSCOPIC INSPECTOR")
+                            .size(14.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(103, 232, 249)),
+                    );
+                    ui.add_space(6.0);
+
                     if let Some(id) = self.selected_org_id {
                         if let Some(org) = self.world.organisms.iter().find(|o| o.id == id) {
                             ui.horizontal(|ui| {
-                                ui.strong(format!("Organism #{} ({})", org.id, org.tribe.name()));
+                                ui.strong(format!("Organism #{} · {}", org.id, org.tribe.name()));
                                 ui.checkbox(&mut self.track_selected, "Track");
                             });
-                            if ui.button("Zoom Microscopic (6×)").clicked() {
+                            if ui.button("🔎 Focus Microscope (6×)").clicked() {
                                 self.cam_x = org.x;
                                 self.cam_y = org.y;
                                 self.cam_zoom = 6.0;
                                 self.track_selected = true;
                             }
-                            ui.separator();
+                            ui.add_space(6.0);
                             ui.label(format!(
-                                "Lineage #{} · Gen {} · Age {}",
+                                "Lineage #{}  ·  Gen {}  ·  Age {}",
                                 org.lineage_id, org.generation, org.age
                             ));
                             ui.label(format!(
-                                "Energy: {:.1} · Offspring: {}",
+                                "Energy {:.1}  ·  Offspring {}",
                                 org.energy, org.offspring_count
                             ));
+
+                            ui.add_space(6.0);
                             ui.separator();
-                            ui.strong("3-Channel Cellular State");
-                            ui.label(format!("Cytoplasm Mass: {:.3}", org.body.metrics.mass));
-                            ui.label(format!(
-                                "Membrane Integrity: {:.3}",
-                                org.body.metrics.membrane_mass
-                            ));
-                            ui.label(format!(
-                                "Organelle Density: {:.3}",
-                                org.body.metrics.organelle_mass
-                            ));
-                            ui.label(format!("Elongation: {:.3}", org.body.metrics.elongation));
+                            ui.label(
+                                egui::RichText::new("3-CHANNEL CELLULAR MORPHOLOGY")
+                                    .small()
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(148, 163, 184)),
+                            );
+                            density_bar(ui, "Cytoplasm", org.body.metrics.mass * 3.5, egui::Color32::from_rgb(56, 189, 248));
+                            density_bar(ui, "Membrane", org.body.metrics.membrane_mass * 5.0, egui::Color32::from_rgb(167, 139, 250));
+                            density_bar(ui, "Organelles", org.body.metrics.organelle_mass * 5.0, egui::Color32::from_rgb(52, 211, 153));
+                            density_bar(ui, "Elongation", org.body.metrics.elongation, egui::Color32::from_rgb(251, 191, 36));
+
+                            ui.add_space(6.0);
                             ui.separator();
-                            ui.strong("Heritable MorphGenome");
-                            ui.label(format!(
-                                "μ={:.4}  σ={:.4}  R={}",
-                                org.morph_genome.mu,
-                                org.morph_genome.sigma,
-                                org.morph_genome.kernel_radius
-                            ));
-                            ui.label(format!(
-                                "Lobes={:.2}  Twist={:+.2}  Asym={:.2}",
-                                org.morph_genome.angular_lobes,
-                                org.morph_genome.spiral_twist,
-                                org.morph_genome.asymmetry
-                            ));
+                            ui.label(
+                                egui::RichText::new("HERITABLE MORPHGENOME")
+                                    .small()
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(148, 163, 184)),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "μ={:.4}   σ={:.4}   R={}\nLobes={:.2}   Twist={:+.2}   Stretch={:.2}\nTendrils={:.2}   Asymmetry={:.2}",
+                                    org.morph_genome.mu,
+                                    org.morph_genome.sigma,
+                                    org.morph_genome.kernel_radius,
+                                    org.morph_genome.angular_lobes,
+                                    org.morph_genome.spiral_twist,
+                                    org.morph_genome.axial_stretch,
+                                    org.morph_genome.tendril_affinity,
+                                    org.morph_genome.asymmetry
+                                ))
+                                .monospace()
+                                .small(),
+                            );
+
+                            ui.add_space(6.0);
                             ui.separator();
-                            ui.strong("NeuralBrain Motor Out");
-                            ui.label(format!(
-                                "Thrust=({:+.2}, {:+.2})  Secrete={:+.2}",
-                                org.brain.last_out[0],
-                                org.brain.last_out[1],
-                                org.brain.last_out[2]
-                            ));
+                            ui.label(
+                                egui::RichText::new("NEURAL CONTROLLER OUTPUT")
+                                    .small()
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(148, 163, 184)),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Thrust ({:+.2}, {:+.2})  Secrete {:+.2}",
+                                    org.brain.last_out[0],
+                                    org.brain.last_out[1],
+                                    org.brain.last_out[2]
+                                ))
+                                .monospace()
+                                .small(),
+                            );
                         } else {
                             ui.label("Selected organism has perished.");
                             self.selected_org_id = None;
                             self.track_selected = false;
                         }
                     } else {
-                        ui.label("Click any organism in the viewport to inspect its continuous cellular body, genome, and neural activity.");
+                        ui.label(
+                            egui::RichText::new(
+                                "Click any organism in the abyssal viewport to track and inspect its 40×40×3 cellular state, heritable genome, and neural activity.",
+                            )
+                            .small()
+                            .color(egui::Color32::from_rgb(145, 165, 190)),
+                        );
                     }
 
+                    ui.add_space(10.0);
                     ui.separator();
-                    ui.strong("🧬 Discovery Archive (Top)");
+                    ui.label(
+                        egui::RichText::new("🧬 MAP-ELITES DISCOVERY ARCHIVE")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::from_rgb(148, 163, 184)),
+                    );
+                    ui.add_space(4.0);
                     let mut top: Vec<_> = self
                         .world
                         .phylogeny
@@ -620,13 +764,14 @@ impl ObservatoryApp {
                         .flatten()
                         .collect();
                     top.sort_by(|a, b| b.fitness.total_cmp(&a.fitness));
-                    for entry in top.into_iter().take(6) {
+                    for entry in top.into_iter().take(7) {
                         ui.label(
                             egui::RichText::new(format!(
-                                "• {} (Gen {}, fit {:.0})",
+                                "◆ {}  (Gen {}, fit {:.0})",
                                 entry.label, entry.generation, entry.fitness
                             ))
-                            .small(),
+                            .small()
+                            .color(egui::Color32::from_rgb(190, 225, 245)),
                         );
                     }
                 });
@@ -696,16 +841,18 @@ impl ObservatoryApp {
             gpu.egui_renderer.free_texture(id);
         }
 
-        // Apply deferred UI actions
         if let Some(preset) = action_new_universe {
             let seed = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0xAB10_6E4E);
-            self.world = ConvergenceWorld::from_universe(seed, preset.config(), self.prefer_gpu_compute);
+            self.world =
+                ConvergenceWorld::from_universe(seed, preset.config(), self.prefer_gpu_compute);
             self.selected_org_id = None;
             self.track_selected = false;
-            self.status_toast = format!("Generated {}", preset.name());
+            self.pop_history.clear();
+            self.nutr_history.clear();
+            self.status_toast = format!("Seeded {}", preset.name());
         }
         if action_save {
             match save_world_atomic(&self.world, "autosave") {
@@ -714,7 +861,10 @@ impl ObservatoryApp {
             }
         }
         if action_load {
-            match load_world(Path::new("saves/worlds/autosave.abio.json"), self.prefer_gpu_compute) {
+            match load_world(
+                Path::new("saves/worlds/autosave.abio.json"),
+                self.prefer_gpu_compute,
+            ) {
                 Ok(w) => {
                     self.world = w;
                     self.selected_org_id = None;
@@ -727,14 +877,16 @@ impl ObservatoryApp {
             let _ = std::fs::create_dir_all("assets/screenshots");
             match render_png(
                 &self.world,
-                1280,
-                720,
+                1440,
+                810,
                 self.cam_x,
                 self.cam_y,
                 self.cam_zoom,
                 Path::new("assets/screenshots/observatory_capture.png"),
             ) {
-                Ok(()) => self.status_toast = "Saved assets/screenshots/observatory_capture.png".to_string(),
+                Ok(()) => {
+                    self.status_toast = "Saved assets/screenshots/observatory_capture.png".to_string()
+                }
                 Err(e) => self.status_toast = format!("Capture error: {e}"),
             }
         }
@@ -749,11 +901,92 @@ impl ObservatoryApp {
     }
 }
 
+fn configure_laboratory_theme(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.window_fill = egui::Color32::from_rgba_unmultiplied(8, 12, 22, 235);
+    visuals.panel_fill = egui::Color32::from_rgba_unmultiplied(7, 11, 19, 228);
+    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(13, 20, 34);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(17, 26, 44);
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(24, 42, 68);
+    visuals.widgets.hovered.fg_stroke =
+        egui::Stroke::new(1.2, egui::Color32::from_rgb(103, 232, 249));
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(14, 116, 144);
+    visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(14, 165, 233, 90);
+    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(56, 189, 248));
+    ctx.set_visuals(visuals);
+}
+
+fn metric_pill(ui: &mut egui::Ui, label: &str, value: &str, color: egui::Color32) {
+    egui::Frame::NONE
+        .fill(egui::Color32::from_rgb(12, 19, 32))
+        .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.35)))
+        .corner_radius(egui::CornerRadius::same(6))
+        .inner_margin(egui::Margin::symmetric(8, 5))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.label(
+                    egui::RichText::new(label)
+                        .size(9.5)
+                        .color(egui::Color32::from_rgb(140, 160, 185)),
+                );
+                ui.label(egui::RichText::new(value).size(14.0).strong().color(color));
+            });
+        });
+}
+
+fn density_bar(ui: &mut egui::Ui, label: &str, frac: f32, color: egui::Color32) {
+    let f = frac.clamp(0.0, 1.0);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("{label:<10}")).small().monospace());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(140.0, 8.0), egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, 4.0, egui::Color32::from_rgb(15, 23, 38));
+        let mut fill_rect = rect;
+        fill_rect.set_width(rect.width() * f);
+        ui.painter().rect_filled(fill_rect, 4.0, color);
+    });
+}
+
+fn draw_sparkline(ui: &mut egui::Ui, title: &str, data: &VecDeque<f32>, color: egui::Color32) {
+    ui.label(
+        egui::RichText::new(title)
+            .size(10.5)
+            .color(egui::Color32::from_rgb(140, 165, 190)),
+    );
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(244.0, 38.0), egui::Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        6.0,
+        egui::Color32::from_rgba_unmultiplied(10, 16, 28, 220),
+    );
+    if data.len() < 2 {
+        return;
+    }
+    let min_v = data.iter().copied().fold(f32::INFINITY, f32::min);
+    let max_v = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let span = (max_v - min_v).max(0.001);
+    let n = (data.len() - 1) as f32;
+
+    let points: Vec<egui::Pos2> = data
+        .iter()
+        .enumerate()
+        .map(|(i, &val)| {
+            let x = rect.left() + 4.0 + (i as f32 / n) * (rect.width() - 8.0);
+            let y = rect.bottom() - 4.0 - ((val - min_v) / span) * (rect.height() - 8.0);
+            egui::pos2(x, y)
+        })
+        .collect();
+    ui.painter()
+        .add(egui::Shape::line(points, egui::Stroke::new(1.6, color)));
+}
+
 impl ApplicationHandler for ObservatoryApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let attrs = Window::default_attributes()
-                .with_title("SYMBIOTE: ABIOGENESIS — EVOLUTION UNBOUND")
+                .with_title("SYMBIOTE: ABIOGENESIS — PROJECT BIOLUMINESCENCE")
                 .with_inner_size(winit::dpi::LogicalSize::new(1440.0, 900.0));
             let win = Arc::new(event_loop.create_window(attrs).expect("create window"));
             self.init_gpu(win.clone());
@@ -793,7 +1026,7 @@ impl ApplicationHandler for ObservatoryApp {
                     MouseScrollDelta::PixelDelta(p) => (p.y / 40.0) as f32,
                 };
                 let factor = if scroll > 0.0 { 1.15 } else { 1.0 / 1.15 };
-                self.cam_zoom = (self.cam_zoom * factor).clamp(0.6, 18.0);
+                self.cam_zoom = (self.cam_zoom * factor).clamp(0.7, 18.0);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -825,12 +1058,12 @@ impl ApplicationHandler for ObservatoryApp {
                         self.track_selected = false;
                         self.cam_y += pan;
                     }
-                    KeyCode::Equal => self.cam_zoom = (self.cam_zoom * 1.2).clamp(0.6, 18.0),
-                    KeyCode::Minus => self.cam_zoom = (self.cam_zoom / 1.2).clamp(0.6, 18.0),
+                    KeyCode::Equal => self.cam_zoom = (self.cam_zoom * 1.2).clamp(0.7, 18.0),
+                    KeyCode::Minus => self.cam_zoom = (self.cam_zoom / 1.2).clamp(0.7, 18.0),
                     KeyCode::Digit0 => {
                         self.cam_x = 0.0;
                         self.cam_y = 0.0;
-                        self.cam_zoom = 1.0;
+                        self.cam_zoom = 1.15;
                         self.track_selected = false;
                     }
                     _ => {}
@@ -890,7 +1123,7 @@ struct OrgMeta {
     accent_shift: f32,
     energy_norm: f32,
     pulse: f32,
-    pad: f32,
+    mass: f32,
 };
 
 @group(0) @binding(0) var<uniform> cam: Camera;
@@ -931,15 +1164,20 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> vec3<f32> {
     return rgb + vec3<f32>(v - c);
 }
 
+fn toroidal_delta(d: f32) -> f32 {
+    var r = d - 2.0 * floor((d + 1.0) * 0.5);
+    return r;
+}
+
 fn sample_eco(wx: f32, wy: f32) -> vec4<f32> {
-    let u = clamp((wx + 1.0) * 0.5, 0.0, 0.999) * f32(cam.eco_w - 1u);
-    let v = clamp((wy + 1.0) * 0.5, 0.0, 0.999) * f32(cam.eco_h - 1u);
-    let x0 = u32(floor(u));
-    let y0 = u32(floor(v));
-    let x1 = min(x0 + 1u, cam.eco_w - 1u);
-    let y1 = min(y0 + 1u, cam.eco_h - 1u);
-    let fx = fract(u);
-    let fy = fract(v);
+    let u = fract((wx + 1.0) * 0.5) * f32(cam.eco_w);
+    let v = fract((wy + 1.0) * 0.5) * f32(cam.eco_h);
+    let x0 = u32(floor(u)) % cam.eco_w;
+    let y0 = u32(floor(v)) % cam.eco_h;
+    let x1 = (x0 + 1u) % cam.eco_w;
+    let y1 = (y0 + 1u) % cam.eco_h;
+    let fx = smoothstep(0.0, 1.0, fract(u));
+    let fy = smoothstep(0.0, 1.0, fract(v));
 
     let c00 = eco[y0 * cam.eco_w + x0];
     let c10 = eco[y0 * cam.eco_w + x1];
@@ -949,15 +1187,15 @@ fn sample_eco(wx: f32, wy: f32) -> vec4<f32> {
 }
 
 fn sample_body(org_idx: u32, lu: f32, lv: f32) -> vec3<f32> {
-    let res = 24u;
+    let res = 40u;
     let fx_pos = clamp(lu, 0.0, 0.999) * f32(res - 1u);
     let fy_pos = clamp(lv, 0.0, 0.999) * f32(res - 1u);
     let x0 = u32(floor(fx_pos));
     let y0 = u32(floor(fy_pos));
     let x1 = min(x0 + 1u, res - 1u);
     let y1 = min(y0 + 1u, res - 1u);
-    let fx = fract(fx_pos);
-    let fy = fract(fy_pos);
+    let fx = smoothstep(0.0, 1.0, fract(fx_pos));
+    let fy = smoothstep(0.0, 1.0, fract(fy_pos));
 
     let base = org_idx * res * res;
     let b00 = bodies[base + y0 * res + x0].xyz;
@@ -973,50 +1211,75 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let wx = cam.center_x + (ndc.x * cam.aspect) / cam.zoom;
     let wy = cam.center_y + ndc.y / cam.zoom;
 
-    var col = vec3<f32>(0.008, 0.014, 0.026);
-    if (abs(wx) <= 1.0 && abs(wy) <= 1.0) {
-        let e = sample_eco(wx, wy);
-        col += vec3<f32>(0.02, 0.14, 0.17) * e.x;
-        col += vec3<f32>(0.14, 0.06, 0.26) * e.y;
-        col += vec3<f32>(0.36, 0.05, 0.09) * e.z;
-        col += vec3<f32>(0.08, 0.34, 0.72) * pow(e.w, 1.3);
-    }
+    // Deep near-black abyssal void with subtle optical vignette
+    let vig = clamp(1.0 - 0.24 * (ndc.x * ndc.x * 0.45 + ndc.y * ndc.y), 0.55, 1.0);
+    var col = vec3<f32>(0.003, 0.005, 0.011) * vig;
 
+    // Seamless toroidal bioluminescent chemical wisps & mycelial filaments
+    let e = sample_eco(wx, wy);
+    let nutr_wisp = pow(max(e.x - 0.36, 0.0), 2.2);
+    let pher_wisp = pow(e.y, 1.5);
+    let tox_wisp = pow(e.z, 1.6);
+    let root_fil = pow(e.w, 2.4);
+
+    col += vec3<f32>(0.008, 0.055, 0.085) * nutr_wisp;
+    col += vec3<f32>(0.14, 0.05, 0.26) * pher_wisp;
+    col += vec3<f32>(0.42, 0.05, 0.09) * tox_wisp;
+    col += vec3<f32>(0.03, 0.14, 0.28) * root_fil;
+
+    // Composite smooth 40x40x3 bioluminescent organisms (toroidal)
     for (var i: u32 = 0u; i < cam.org_count; i = i + 1u) {
         let o = orgs[i];
-        let dx = wx - o.x;
-        let dy = wy - o.y;
-        if (abs(dx) > o.radius || abs(dy) > o.radius) {
+        let halo_r = o.radius * 1.38;
+        let dx = toroidal_delta(wx - o.x);
+        let dy = toroidal_delta(wy - o.y);
+        if (abs(dx) > halo_r || abs(dy) > halo_r) {
             continue;
         }
-        let lu = (dx / o.radius) * 0.5 + 0.5;
-        let lv = (dy / o.radius) * 0.5 + 0.5;
-        let cell = sample_body(i, lu, lv);
-        let cyto = cell.x;
-        let mem = cell.y;
-        let organ = cell.z;
 
-        if (cyto > 0.01 || mem > 0.01 || organ > 0.01) {
-            let breath = 0.88 + 0.12 * sin(o.pulse + cam.time * 2.0);
-            let core_rgb = hsv_to_rgb(o.hue, 0.72, 0.90 * breath * o.energy_norm);
-            let mem_rgb = hsv_to_rgb(fract(o.hue + 0.12), 0.42, 1.30);
-            let org_rgb = hsv_to_rgb(fract(o.hue + o.accent_shift), 0.85, 1.45);
+        let breath = 0.90 + 0.10 * sin(o.pulse + cam.time * 1.8);
+        let core_rgb = hsv_to_rgb(o.hue, 0.92, 0.72 * breath * o.energy_norm);
+        let mem_rgb = hsv_to_rgb(fract(o.hue + 0.08), 0.72, 1.15);
+        let org_rgb = hsv_to_rgb(fract(o.hue + o.accent_shift), 0.95, 1.45);
 
-            let cyto_alpha = clamp(cyto * 0.90, 0.0, 0.94);
-            col = mix(col, core_rgb * (0.40 + 0.85 * cyto), cyto_alpha);
-            col += mem_rgb * mem * 0.72;
-            col += org_rgb * organ * 0.95;
+        let dist_norm = length(vec2<f32>(dx, dy)) / halo_r;
+        if (dist_norm < 1.0) {
+            let halo = pow(1.0 - dist_norm, 3.0) * 0.09 * o.mass * 3.0 * o.energy_norm;
+            col += core_rgb * halo;
+        }
+
+        if (abs(dx) <= o.radius && abs(dy) <= o.radius) {
+            let lu = (dx / o.radius) * 0.5 + 0.5;
+            let lv = (dy / o.radius) * 0.5 + 0.5;
+            let cell = sample_body(i, lu, lv);
+            let cyto = cell.x;
+            let mem = cell.y;
+            let organ = cell.z;
+
+            if (cyto > 0.015 || mem > 0.015 || organ > 0.015) {
+                let cyto_soft = smoothstep(0.03, 0.72, cyto);
+                let inner_glow = pow(cyto, 1.6);
+                let alpha = clamp(cyto_soft * 0.78, 0.0, 0.86);
+                let rim = pow(mem, 1.45) * 0.75;
+                let nucleus = pow(organ, 1.3) * 1.10;
+
+                col = mix(col, core_rgb * (0.20 + 0.85 * inner_glow), alpha);
+                col += mem_rgb * rim;
+                col += org_rgb * nucleus;
+            }
         }
 
         if (i32(i) == cam.selected_idx) {
             let dist = length(vec2<f32>(dx, dy)) / o.radius;
-            if (abs(dist - 0.92) < 0.035) {
-                col += vec3<f32>(0.35, 0.95, 1.0) * 0.85;
+            if (abs(dist - 0.96) < 0.025) {
+                col += vec3<f32>(0.40, 0.92, 1.0) * (0.65 + 0.25 * sin(cam.time * 4.0));
             }
         }
     }
 
-    col = col / (vec3<f32>(1.0) + col * 0.32);
-    return vec4<f32>(pow(col, vec3<f32>(0.92)), 1.0);
+    // ACES filmic tone mapping
+    let x = max(col, vec3<f32>(0.0));
+    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+    return vec4<f32>(pow(clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(0.92)), 1.0);
 }
 "#;

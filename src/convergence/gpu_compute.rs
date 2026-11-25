@@ -263,10 +263,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
-    let xl = select(x - 1u, 0u, x == 0u);
-    let xr = min(x + 1u, u.width - 1u);
-    let yu = select(y - 1u, 0u, y == 0u);
-    let yd = min(y + 1u, u.height - 1u);
+    let xl = (x + u.width - 1u) % u.width;
+    let xr = (x + 1u) % u.width;
+    let yu = (y + u.height - 1u) % u.height;
+    let yd = (y + 1u) % u.height;
 
     let c = src[idx(x, y)];
     let up = src[idx(x, yu)];
@@ -276,14 +276,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let lap = (up + dn + lt + rt) * 0.25 - c;
 
-    var root_grow = 0.0;
-    if (dn.w > 0.35 && c.x > 0.22 && c.z < 0.35) {
-        root_grow = 0.0025 * dn.w * c.x;
-    }
-    let next_root = clamp(c.w * 0.9992 + root_grow, 0.0, 1.0);
-    let next_n = clamp(c.x + lap.x * 0.18 + u.regen_rate * (1.0 - c.x) + c.w * 0.008 * (1.0 - c.x) - c.z * 0.004, 0.0, 1.0);
-    let next_p = clamp((c.y + lap.y * 0.22) * 0.975, 0.0, 1.0);
-    let next_t = clamp((c.z + lap.z * 0.14) * 0.968, 0.0, 1.0);
+    let next_root = clamp((c.w + lap.w * 0.04) * 0.9995, 0.0, 1.0);
+    let next_n = clamp(c.x + lap.x * 0.20 + u.regen_rate * (0.75 - c.x) + c.w * 0.006 * (1.0 - c.x) - c.z * 0.004, 0.0, 1.0);
+    let next_p = clamp((c.y + lap.y * 0.24) * 0.968, 0.0, 1.0);
+    let next_t = clamp((c.z + lap.z * 0.16) * 0.962, 0.0, 1.0);
 
     dst[idx(x, y)] = vec4<f32>(next_n, next_p, next_t, next_root);
 }

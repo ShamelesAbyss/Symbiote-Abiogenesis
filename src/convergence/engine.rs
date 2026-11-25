@@ -320,8 +320,8 @@ impl ConvergenceWorld {
                             continue;
                         }
                         let (ox_pos, oy_pos, o_tribe, o_mass, o_mem, o_energy) = snap[j];
-                        let dx = ox_pos - my_x;
-                        let dy = oy_pos - my_y;
+                        let dx = toroidal_delta(ox_pos - my_x);
+                        let dy = toroidal_delta(oy_pos - my_y);
                         let d2 = dx * dx + dy * dy;
                         if d2 < 1e-6 || d2 > 0.0625 {
                             continue;
@@ -364,22 +364,19 @@ impl ConvergenceWorld {
             let org = &mut self.organisms[i];
             org.vx = (org.vx + fx) * 0.88;
             org.vy = (org.vy + fy) * 0.88;
-            org.x += org.vx;
-            org.y += org.vy;
+            // Seamless toroidal wrapping eliminates boundary congregation completely!
+            org.x = wrap_world_coord(org.x + org.vx);
+            org.y = wrap_world_coord(org.y + org.vy);
 
-            if org.x < -0.95 {
-                org.x = -0.95;
-                org.vx = org.vx.abs() * 0.5;
-            } else if org.x > 0.95 {
-                org.x = 0.95;
-                org.vx = -org.vx.abs() * 0.5;
-            }
-            if org.y < -0.95 {
-                org.y = -0.95;
-                org.vy = org.vy.abs() * 0.5;
-            } else if org.y > 0.95 {
-                org.y = 0.95;
-                org.vy = -org.vy.abs() * 0.5;
+            // Smoothly orient organism heading toward actual swimming velocity
+            let speed = (org.vx * org.vx + org.vy * org.vy).sqrt();
+            if speed > 0.0008 {
+                let target_h = org.vy.atan2(org.vx);
+                let mut diff = (target_h - org.body.heading).rem_euclid(TAU);
+                if diff > std::f32::consts::PI {
+                    diff -= TAU;
+                }
+                org.body.heading = (org.body.heading + diff * 0.08).rem_euclid(TAU);
             }
 
             // Coherent metabolic accounting:
@@ -608,6 +605,26 @@ impl ConvergenceWorld {
 #[inline]
 fn hash_cell(x: f32, y: f32) -> (i32, i32) {
     ((x / HASH_CELL_SIZE).floor() as i32, (y / HASH_CELL_SIZE).floor() as i32)
+}
+
+#[inline]
+pub fn wrap_world_coord(v: f32) -> f32 {
+    let mut w = (v + 1.0).rem_euclid(2.0) - 1.0;
+    if w >= 1.0 {
+        w -= 2.0;
+    }
+    w
+}
+
+#[inline]
+pub fn toroidal_delta(d: f32) -> f32 {
+    if d > 1.0 {
+        d - 2.0
+    } else if d < -1.0 {
+        d + 2.0
+    } else {
+        d
+    }
 }
 
 fn random_eco_genome(rng: &mut StdRng) -> Genome {

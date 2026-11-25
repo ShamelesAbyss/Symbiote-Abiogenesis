@@ -243,9 +243,9 @@ mod tests {
         let a = MorphGenome::from_ecological(eco, Tribe::Blood, &mut rng);
         let b = MorphGenome::from_ecological(eco, Tribe::Solar, &mut rng);
         let child = a.crossover(&b, &mut rng).mutate(&mut rng, 0.2);
-        assert!((0.09..=0.30).contains(&child.mu));
-        assert!((0.018..=0.085).contains(&child.sigma));
-        assert!((3..=7).contains(&child.kernel_radius));
+        assert!((0.10..=0.30).contains(&child.mu));
+        assert!((0.025..=0.088).contains(&child.sigma));
+        assert!((5..=9).contains(&child.kernel_radius));
     }
 
     #[test]

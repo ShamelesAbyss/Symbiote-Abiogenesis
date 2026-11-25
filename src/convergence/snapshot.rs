@@ -1,9 +1,11 @@
-//! Headless high-resolution PNG screenshot renderer for Symbiote: Abiogenesis.
+//! Headless high-resolution PNG screenshot renderer for Symbiote: Abiogenesis — Bioluminescence.
 //!
-//! Mirrors the 3-channel fluorescence-microscopy bioluminescent shading of `OBSERVATORY_WGSL`.
+//! Renders the toroidal deep-abyssal ecosystem using Hermite-smoothed 40x40x3
+//! continuous Lenia bodies, Fresnel-like translucent membranes, luminous internal
+//! organelles, controlled bioluminescent bloom, and wispy chemical plumes.
 
 use crate::convergence::eco_field::{ECO_CHANNELS, ECO_HEIGHT, ECO_WIDTH};
-use crate::convergence::engine::ConvergenceWorld;
+use crate::convergence::engine::{toroidal_delta, ConvergenceWorld};
 use crate::convergence::lenia_body::{BODY_CHANNELS, BODY_RES};
 use anyhow::Result;
 use rayon::prelude::*;
@@ -15,34 +17,39 @@ pub fn capture_showcase_screenshots(prefer_gpu: bool) -> Result<()> {
     fs::create_dir_all("assets/screenshots")?;
 
     let mut world = ConvergenceWorld::new(0xAB10_6E4E, prefer_gpu);
-    for _ in 0..220 {
+    for _ in 0..160 {
         world.step();
     }
 
     render_png(
         &world,
-        1280,
-        720,
+        1440,
+        810,
         0.0,
         0.0,
-        1.0,
+        1.82,
         Path::new("assets/screenshots/ecosystem_overview.png"),
     )?;
 
+    // Center microscopic zoom on the most visually complex / energetic organism
     let (fx, fy) = world
         .organisms
         .iter()
-        .max_by(|a, b| a.energy.total_cmp(&b.energy))
+        .max_by(|a, b| {
+            let sa = a.energy + a.body.metrics.organelle_mass * 200.0 + a.body.metrics.elongation * 40.0;
+            let sb = b.energy + b.body.metrics.organelle_mass * 200.0 + b.body.metrics.elongation * 40.0;
+            sa.total_cmp(&sb)
+        })
         .map(|o| (o.x, o.y))
         .unwrap_or((0.0, 0.0));
 
     render_png(
         &world,
-        1280,
-        720,
+        1440,
+        810,
         fx,
         fy,
-        5.5,
+        5.8,
         Path::new("assets/screenshots/microscopic_cells.png"),
     )?;
 
@@ -74,48 +81,99 @@ pub fn render_png(
             let ndc_x = (u - 0.5) * 2.0;
             let wx = center_x + (ndc_x * aspect) / zoom;
 
-            let mut col = [0.008f32, 0.014, 0.026];
-            if wx.abs() <= 1.0 && wy.abs() <= 1.0 {
-                let e = sample_eco_bilinear(&world.eco_field.cells, wx, wy);
-                col[0] += 0.02 * e[0] + 0.14 * e[1] + 0.36 * e[2] + 0.08 * e[3].powf(1.3);
-                col[1] += 0.14 * e[0] + 0.06 * e[1] + 0.05 * e[2] + 0.34 * e[3].powf(1.3);
-                col[2] += 0.17 * e[0] + 0.26 * e[1] + 0.09 * e[2] + 0.72 * e[3].powf(1.3);
+            // Near-black abyssal void with subtle radial optical vignette
+            let vig = (1.0 - 0.24 * (ndc_x * ndc_x * 0.45 + ndc_y * ndc_y)).clamp(0.55, 1.0);
+            let mut col = [0.003 * vig, 0.005 * vig, 0.011 * vig];
+
+            // Toroidal seamless EcoField: delicate bioluminescent wisps (zero flat wash!)
+            let e = sample_eco_smooth(&world.eco_field.cells, wx, wy);
+            let nutr_wisp = (e[0] - 0.36).max(0.0).powf(2.2);
+            let pher_wisp = e[1].powf(1.5);
+            let tox_wisp = e[2].powf(1.6);
+            let root_fil = e[3].powf(2.4);
+
+            col[0] += 0.008 * nutr_wisp + 0.14 * pher_wisp + 0.42 * tox_wisp + 0.03 * root_fil;
+            col[1] += 0.055 * nutr_wisp + 0.05 * pher_wisp + 0.05 * tox_wisp + 0.14 * root_fil;
+            col[2] += 0.085 * nutr_wisp + 0.26 * pher_wisp + 0.09 * tox_wisp + 0.28 * root_fil;
+
+            // Subtle drifting marine-snow bokeh micro-particles in the deep void
+            let h_speck = hash2d(
+                (wx * 42.0).floor() as i32,
+                (wy * 42.0).floor() as i32,
+            );
+            if h_speck > 0.992 {
+                let fx_s = (wx * 42.0).fract() - 0.5;
+                let fy_s = (wy * 42.0).fract() - 0.5;
+                let d_s = (fx_s * fx_s + fy_s * fy_s).sqrt();
+                let glow = (1.0 - d_s * 5.0).max(0.0).powi(2) * 0.18;
+                col[0] += glow * 0.4;
+                col[1] += glow * 0.8;
+                col[2] += glow * 1.1;
             }
 
+            // Render smooth 40x40x3 bioluminescent Lenia organisms (toroidal wrap)
             for org in &world.organisms {
-                let radius = 0.055 + org.body.metrics.radius_norm * 0.055;
-                let dx = wx - org.x;
-                let dy = wy - org.y;
-                if dx.abs() > radius || dy.abs() > radius {
+                let radius = 0.068 + org.body.metrics.radius_norm * 0.068;
+                let halo_r = radius * 1.32;
+                let dx = toroidal_delta(wx - org.x);
+                let dy = toroidal_delta(wy - org.y);
+                if dx.abs() > halo_r || dy.abs() > halo_r {
                     continue;
                 }
-                let lu = (dx / radius) * 0.5 + 0.5;
-                let lv = (dy / radius) * 0.5 + 0.5;
-                let (cyto, mem, organ) = sample_body_bilinear(&org.body.cells, lu, lv);
-                if cyto > 0.01 || mem > 0.01 || organ > 0.01 {
-                    let energy_norm = (org.energy / 100.0).clamp(0.15, 1.35);
-                    let breath = 0.88 + 0.12 * org.body.pulse_phase.sin();
-                    let core_rgb = hsv_to_rgb(org.morph_genome.biolum_hue, 0.72, 0.90 * breath * energy_norm);
-                    let mem_rgb = hsv_to_rgb((org.morph_genome.biolum_hue + 0.12).fract(), 0.42, 1.30);
-                    let org_rgb = hsv_to_rgb(
-                        (org.morph_genome.biolum_hue + org.morph_genome.accent_shift).fract(),
-                        0.85,
-                        1.45,
-                    );
 
-                    let alpha = (cyto * 0.90).clamp(0.0, 0.94);
+                let energy_norm = (org.energy / 95.0).clamp(0.30, 1.15);
+                let breath = 0.90 + 0.10 * org.body.pulse_phase.sin();
+                // Rich, deeply saturated bioluminescent colors (never washed-out pastel white!)
+                let core_rgb = hsv_to_rgb(org.morph_genome.biolum_hue, 0.92, 0.72 * breath * energy_norm);
+                let mem_rgb = hsv_to_rgb((org.morph_genome.biolum_hue + 0.08).rem_euclid(1.0), 0.72, 1.15);
+                let org_rgb = hsv_to_rgb(
+                    (org.morph_genome.biolum_hue + org.morph_genome.accent_shift).rem_euclid(1.0),
+                    0.95,
+                    1.45,
+                );
+
+                // Controlled soft ambient bioluminescent halo around the organism
+                let dist_norm = (dx * dx + dy * dy).sqrt() / halo_r;
+                if dist_norm < 1.0 {
+                    let halo = (1.0 - dist_norm).powi(3) * 0.09 * org.body.metrics.mass * 3.0 * energy_norm;
                     for c in 0..3 {
-                        let c_val = core_rgb[c] * (0.40 + 0.85 * cyto);
-                        col[c] = col[c] * (1.0 - alpha)
-                            + c_val * alpha
-                            + mem_rgb[c] * mem * 0.72
-                            + org_rgb[c] * organ * 0.95;
+                        col[c] += core_rgb[c] * halo;
+                    }
+                }
+
+                if dx.abs() <= radius && dy.abs() <= radius {
+                    let lu = (dx / radius) * 0.5 + 0.5;
+                    let lv = (dy / radius) * 0.5 + 0.5;
+                    let (cyto, mem, organ) = sample_body_hermite(&org.body.cells, lu, lv);
+
+                    if cyto > 0.015 || mem > 0.015 || organ > 0.015 {
+                        // Deep translucent fluorescence cytoplasm
+                        let cyto_soft = smoothstep(0.03, 0.72, cyto);
+                        let inner_glow = cyto.powf(1.6);
+                        let alpha = (cyto_soft * 0.78).clamp(0.0, 0.86);
+
+                        // Razor-delicate glowing translucent membrane rim
+                        let rim = mem.powf(1.45) * 0.75;
+                        // Luminous internal organelle core
+                        let nucleus = organ.powf(1.3) * 1.10;
+
+                        for c in 0..3 {
+                            let body_col = core_rgb[c] * (0.20 + 0.85 * inner_glow);
+                            col[c] = col[c] * (1.0 - alpha)
+                                + body_col * alpha
+                                + mem_rgb[c] * rim
+                                + org_rgb[c] * nucleus;
+                        }
                     }
                 }
             }
 
+            // ACES-inspired filmic tone mapping for rich bioluminescent highlights without clipping
             for c in 0..3 {
-                let mapped = (col[c] / (1.0 + col[c] * 0.32)).powf(0.92).clamp(0.0, 1.0);
+                let x = col[c].max(0.0);
+                let mapped = ((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14))
+                    .powf(0.92)
+                    .clamp(0.0, 1.0);
                 row[px * 3 + c] = (mapped * 255.0) as u8;
             }
         }
@@ -131,15 +189,28 @@ pub fn render_png(
     Ok(())
 }
 
-fn sample_eco_bilinear(cells: &[f32], wx: f32, wy: f32) -> [f32; 4] {
-    let u = ((wx + 1.0) * 0.5).clamp(0.0, 0.999) * (ECO_WIDTH - 1) as f32;
-    let v = ((wy + 1.0) * 0.5).clamp(0.0, 0.999) * (ECO_HEIGHT - 1) as f32;
-    let x0 = u.floor() as usize;
-    let y0 = v.floor() as usize;
-    let x1 = (x0 + 1).min(ECO_WIDTH - 1);
-    let y1 = (y0 + 1).min(ECO_HEIGHT - 1);
-    let fx = u.fract();
-    let fy = v.fract();
+#[inline]
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+#[inline]
+fn hash2d(x: i32, y: i32) -> f32 {
+    let n = (x.wrapping_mul(374_761_393) ^ y.wrapping_mul(668_265_263)).wrapping_mul(1_274_126_177);
+    let u = ((n ^ (n >> 16)) as u32) & 0x00FF_FFFF;
+    u as f32 / 16_777_215.0
+}
+
+fn sample_eco_smooth(cells: &[f32], wx: f32, wy: f32) -> [f32; 4] {
+    let u = ((wx + 1.0) * 0.5).rem_euclid(1.0) * ECO_WIDTH as f32;
+    let v = ((wy + 1.0) * 0.5).rem_euclid(1.0) * ECO_HEIGHT as f32;
+    let x0 = (u.floor() as usize) % ECO_WIDTH;
+    let y0 = (v.floor() as usize) % ECO_HEIGHT;
+    let x1 = (x0 + 1) % ECO_WIDTH;
+    let y1 = (y0 + 1) % ECO_HEIGHT;
+    let fx = smoothstep(0.0, 1.0, u.fract());
+    let fy = smoothstep(0.0, 1.0, v.fract());
 
     let mut out = [0.0f32; 4];
     for c in 0..4 {
@@ -154,15 +225,16 @@ fn sample_eco_bilinear(cells: &[f32], wx: f32, wy: f32) -> [f32; 4] {
     out
 }
 
-fn sample_body_bilinear(cells: &[f32], lu: f32, lv: f32) -> (f32, f32, f32) {
+/// Hermite-smoothed interpolation over the 40x40x3 continuous cellular body.
+fn sample_body_hermite(cells: &[f32], lu: f32, lv: f32) -> (f32, f32, f32) {
     let u = lu.clamp(0.0, 0.999) * (BODY_RES - 1) as f32;
     let v = lv.clamp(0.0, 0.999) * (BODY_RES - 1) as f32;
     let x0 = u.floor() as usize;
     let y0 = v.floor() as usize;
     let x1 = (x0 + 1).min(BODY_RES - 1);
     let y1 = (y0 + 1).min(BODY_RES - 1);
-    let fx = u.fract();
-    let fy = v.fract();
+    let fx = smoothstep(0.0, 1.0, u.fract());
+    let fy = smoothstep(0.0, 1.0, v.fract());
 
     let b00 = (y0 * BODY_RES + x0) * BODY_CHANNELS;
     let b10 = (y0 * BODY_RES + x1) * BODY_CHANNELS;

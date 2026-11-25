@@ -59,10 +59,10 @@ impl UniversePreset {
         match self {
             Self::PrimordialOcean => UniverseConfig {
                 preset: self,
-                initial_organisms: 48,
-                max_organisms: 256,
-                nutrient_regen_mult: 1.35,
-                metabolic_cost_mult: 0.90,
+                initial_organisms: 32,
+                max_organisms: 72,
+                nutrient_regen_mult: 1.25,
+                metabolic_cost_mult: 0.95,
                 mutation_rate: 0.055,
                 allow_abiogenesis: true,
                 catastrophe_interval: 0,
