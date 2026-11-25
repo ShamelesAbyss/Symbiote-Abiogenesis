@@ -179,3 +179,15 @@ Measured in `--release` on **Intel Core i9-14900HX · NVIDIA GeForce RTX 4070 La
 - **Symbiote: Abiogenesis** is released under the [MIT License](LICENSE).
 - Continuous cellular automata kernel shells and Gaussian growth formulations are adapted with attribution from **Lenia** (Bert Chan, 2018, MIT License) and **Primordia** (ShamelesAbyss). Full license texts are preserved in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - Scientific and conceptual inspiration from **The Bibites: Digital Life** (Léo Caussan), **Karl Sims' Evolved Virtual Creatures (1994)**, **NEAT / HyperNEAT / CPPNs** (Stanley & Miikkulainen), and **MAP-Elites** (Mouret & Clune) is documented in [docs/RESEARCH_GENOMORPH.md](docs/RESEARCH_GENOMORPH.md). All code, shaders, anatomy, and branding are original implementations.
+
+---
+
+## In Loving Memory of Ashlan Haley Rapponotti
+
+*June 21, 2003 – November 13, 2026*
+
+For the beautiful woman who listened to my passions, believed in me, and made my world a happier place simply by being part of it.
+
+Every creation, every discovery, and every milestone reached carries a piece of my heart dedicated to you.
+
+**Forever loved. Forever missed. Forever remembered.** 💜
